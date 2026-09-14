@@ -1,0 +1,57 @@
+import { useTranslation } from 'react-i18next';
+import type { AgentInfo } from '@open-alive/core';
+
+// Banners are reserved for states that need the user to ACT: a decision request
+// or an error. Completion (`done`) is informational and surfaces via the
+// auto-dismissing completion toast instead \u2014 keeping it out of the banner stops
+// finished sessions from piling up as un-dismissable green banners that bury the
+// actionable ones.
+const ATTENTION_STATES: Record<string, { color: string; icon: string; messageKey: string }> = {
+  waiting: { color: 'var(--accent-amber)', icon: '\u26A0\uFE0F', messageKey: 'notifications.needsPermission' },
+  error: { color: 'var(--accent-red)', icon: '\u274C', messageKey: 'notifications.errorOccurred' },
+};
+
+interface NotificationBannerProps {
+  agents: AgentInfo[];
+}
+
+export function NotificationBanner({ agents }: NotificationBannerProps) {
+  const { t } = useTranslation();
+  const attentionAgents = agents.filter((a) => a.state in ATTENTION_STATES);
+
+  if (attentionAgents.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      {attentionAgents.map((agent) => {
+        const config = ATTENTION_STATES[agent.state]!;
+        const label = agent.displayName || agent.projectName || t('agents.generalAgent');
+        return (
+          <div
+            key={agent.sessionId}
+            className="flex items-center gap-5 px-6 py-5 rounded-xl border"
+            style={{
+              borderColor: config.color,
+              background: `${config.color}10`,
+              backdropFilter: 'blur(12px)',
+            }}
+          >
+            <span className="text-xl shrink-0">{config.icon}</span>
+            <div className="flex-1 min-w-0">
+              <span className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                {label}
+              </span>
+              <span className="text-[15px] mx-2" style={{ color: 'var(--text-secondary)' }}>—</span>
+              <span className="text-[15px]" style={{ color: config.color }}>
+                {t(config.messageKey)}
+              </span>
+            </div>
+            <span className="text-xs shrink-0" style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+              {agent.projectName || agent.sessionId.slice(0, 8)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

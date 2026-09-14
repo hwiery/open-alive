@@ -1,0 +1,158 @@
+import { describe, it, expect } from 'vitest';
+import {
+  mergeVerdict,
+  toOpinion,
+  reviewWithPanel,
+  buildVerificationPanelPrompt,
+  VERIFICATION_SYSTEM,
+} from '../panel/verificationPanel.js';
+import type { Panel, PanelMemberResult } from '../panel/litellmPanel.js';
+import type { VerificationOpinion } from '@open-alive/core';
+
+const pass = (model: string, reason = 'ok'): VerificationOpinion => ({ model, passed: true, reason });
+const fail = (model: string, reason = 'not met'): VerificationOpinion => ({ model, passed: false, reason });
+const abstain = (model: string): VerificationOpinion => ({ model, passed: null, reason: '', error: 'timeout' });
+
+describe('toOpinion', () => {
+  it('reads a verdict out of a fenced answer', () => {
+    const m: PanelMemberResult = { model: 'grok', respondedModel: 'grok-4.5', content: '```json\n{"passed":false,"reason":"tests missing"}\n```' };
+    expect(toOpinion(m)).toEqual({ model: 'grok', respondedModel: 'grok-4.5', passed: false, reason: 'tests missing' });
+  });
+  it('abstains when the member never answered', () => {
+    expect(toOpinion({ model: 'x', content: null, error: 'HTTP 429' })).toMatchObject({ passed: null, error: 'HTTP 429' });
+  });
+  it('abstains rather than guessing when the answer has no verdict', () => {
+    expect(toOpinion({ model: 'x', content: 'looks fine to me' })).toMatchObject({ passed: null, error: '판정을 읽을 수 없음' });
+  });
+});
+
+describe('mergeVerdict', () => {
+  it('passes when the gate and the panel agree', () => {
+    const v = mergeVerdict({ passed: true, reason: 'build green' }, [pass('a'), pass('b')], 1);
+    expect(v.passed).toBe(true);
+    expect(v.reason).toBe('build green');
+    expect(v.consensus).toEqual({ agree: 3, total: 3 });
+  });
+
+  it('lets a MAJORITY of the panel veto a gate PASS', () => {
+    const v = mergeVerdict({ passed: true, reason: 'looks done' }, [fail('a', 'solved a different problem'), fail('b'), pass('c')], 1);
+    expect(v.passed).toBe(false);
+    expect(v.reason).toContain('solved a different problem');
+    expect(v.consensus).toEqual({ agree: 2, total: 4 });
+  });
+
+  it('does NOT let a single dissenter veto a gate PASS', () => {
+    const v = mergeVerdict({ passed: true, reason: 'done' }, [fail('a'), pass('b'), pass('c')], 1);
+    expect(v.passed).toBe(true);
+    expect(v.consensus).toEqual({ agree: 3, total: 4 });
+  });
+
+  it('keeps the gate authoritative on a FAIL regardless of the panel', () => {
+    const v = mergeVerdict({ passed: false, reason: 'tests red' }, [pass('a'), pass('b')], 1);
+    expect(v.passed).toBe(false);
+    expect(v.reason).toBe('tests red');
+  });
+
+  it('degrades to the gate alone when every member abstained', () => {
+    const v = mergeVerdict({ passed: true, reason: 'done' }, [abstain('a'), abstain('b')], 1);
+    expect(v.passed).toBe(true);
+    expect(v.consensus).toEqual({ agree: 1, total: 1 });
+  });
+
+  it('records the gate verdict and the panel separately from the summary', () => {
+    const v = mergeVerdict({ passed: true, reason: 'g' }, [pass('a')], 42);
+    expect(v.gate).toEqual({ passed: true, reason: 'g' });
+    expect(v.panel).toHaveLength(1);
+    expect(v.at).toBe(42);
+  });
+});
+
+describe('buildVerificationPanelPrompt', () => {
+  it('carries the goal and the report', () => {
+    const p = buildVerificationPanelPrompt('add X', 'I added X');
+    expect(p).toContain('add X');
+    expect(p).toContain('I added X');
+  });
+
+  /**
+   * Measured on records a human overruled: with the gate verdict in the prompt
+   * the panel produced more false alarms on good work (2/21) than catches on bad
+   * (1/21); with it removed, 0/21 and 2/21.
+   */
+  it('withholds the first reviewer\'s verdict so the vote stays independent', () => {
+    const p = buildVerificationPanelPrompt('add X', 'I added X');
+    expect(p).not.toContain('FIRST REVIEWER');
+    expect(p).not.toContain('PASS');
+    expect(VERIFICATION_SYSTEM).not.toContain('first reviewer');
+  });
+
+  /**
+   * Asking for the weakest point before the verdict is what produced the only
+   * panel vetoes in the comparison (2 of 7 on overruled work, 0 of 7 on good).
+   * An earlier wording let a named gap still pass and every reviewer used it.
+   */
+  it('asks for the weakest point first, with no clause that excuses it', () => {
+    expect(VERIFICATION_SYSTEM).toContain('"gap"');
+    expect(VERIFICATION_SYSTEM.indexOf('gap')).toBeLessThan(VERIFICATION_SYSTEM.indexOf('Then decide'));
+    expect(VERIFICATION_SYSTEM).not.toMatch(/still PASS|does not change/i);
+  });
+});
+
+describe('toOpinion reads the gap', () => {
+  it('keeps the weakest point alongside the vote', () => {
+    const o = toOpinion({ model: 'm', content: '{"gap":"no diff shown","passed":true,"reason":"ok"}' });
+    expect(o).toMatchObject({ passed: true, reason: 'ok', gap: 'no diff shown' });
+  });
+
+  it('still reads a verdict from a reviewer that skipped the gap', () => {
+    const o = toOpinion({ model: 'm', content: '{"passed":false,"reason":"thin"}' });
+    expect(o).toMatchObject({ passed: false, reason: 'thin' });
+    expect(o.gap).toBeUndefined();
+  });
+});
+
+describe('a lone dissent is recorded rather than lost', () => {
+  it('flags a pass that one reviewer voted against', () => {
+    const v = mergeVerdict({ passed: true, reason: 'done' }, [fail('a'), pass('b'), pass('c')], 1);
+    expect(v.passed).toBe(true);
+    expect(v.flagged).toBe(true);
+  });
+
+  it('leaves an unanimous pass unflagged', () => {
+    expect(mergeVerdict({ passed: true, reason: 'done' }, [pass('a'), pass('b')], 1).flagged).toBeUndefined();
+  });
+
+  it('does not flag a verdict that already failed', () => {
+    const v = mergeVerdict({ passed: true, reason: 'done' }, [fail('a'), fail('b'), pass('c')], 1);
+    expect(v.passed).toBe(false);
+    expect(v.flagged).toBeUndefined();
+  });
+});
+
+describe('reviewWithPanel', () => {
+  const panelOf = (answers: string[]): Panel => ({
+    models: answers.map((_, i) => `m${i}`),
+    run: async () => answers.map((content, i) => ({ model: `m${i}`, content })),
+  });
+
+  it('does not spend panel calls when the gate already failed', async () => {
+    let called = false;
+    const panel: Panel = { models: ['m'], run: async () => { called = true; return []; } };
+    const v = await reviewWithPanel({ panel, now: () => 1 }, { goal: 'g' }, 'r', { passed: false, reason: 'nope' });
+    expect(called).toBe(false);
+    expect(v.passed).toBe(false);
+  });
+
+  it('folds panel answers into the verdict', async () => {
+    const panel = panelOf(['{"passed":false,"reason":"scope"}', '{"passed":false,"reason":"scope"}']);
+    const v = await reviewWithPanel({ panel, now: () => 1 }, { goal: 'g' }, 'r', { passed: true, reason: 'ok' });
+    expect(v.passed).toBe(false);
+  });
+
+  it('falls back to the gate when the whole panel throws', async () => {
+    const panel: Panel = { models: ['m'], run: async () => { throw new Error('gateway down'); } };
+    const v = await reviewWithPanel({ panel, now: () => 1 }, { goal: 'g' }, 'r', { passed: true, reason: 'ok' });
+    expect(v.passed).toBe(true);
+    expect(v.panel).toBeUndefined();
+  });
+});

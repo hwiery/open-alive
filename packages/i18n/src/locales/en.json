@@ -1,0 +1,1175 @@
+{
+  "header": {
+    "title": "open-alive",
+    "agentCount_one": "{{count}} agent",
+    "agentCount_other": "{{count}} agents",
+    "toggleLeftPanel": "Toggle left panel",
+    "toggleRightPanel": "Toggle right panel",
+    "toggleChat": "Toggle chat",
+    "openSettings": "Settings",
+    "usageResetsIn": "resets in {{time}}",
+    "usageStale": "last known value"
+  },
+  "settings": {
+    "title": "Settings",
+    "close": "Close",
+    "done": "Done",
+    "reset": "Reset to defaults",
+    "resetTooltip": "Restore all settings to factory defaults",
+    "tabs": {
+      "sound": "Sound",
+      "terminal": "Terminal",
+      "alerts": "Alerts",
+      "backend": "Backend"
+    },
+    "sound": {
+      "completion": {
+        "title": "Completion sound"
+      },
+      "error": {
+        "title": "Error sound"
+      },
+      "waiting": {
+        "title": "Decision request sound"
+      },
+      "volume": "Volume",
+      "test": "Test"
+    },
+    "terminal": {
+      "theme": "Color theme",
+      "font": "Font family",
+      "fontSize": "Font size",
+      "lineHeight": "Line spacing",
+      "letterSpacing": "Letter spacing",
+      "cursorStyle": "Cursor style",
+      "cursorBlock": "Block",
+      "cursorBar": "Bar",
+      "cursorUnderline": "Underline",
+      "cursorBlink": "Cursor blink",
+      "cursorWidth": "Cursor width",
+      "paddingX": "Horizontal padding",
+      "paddingY": "Vertical padding",
+      "scrollback": "Scrollback buffer",
+      "lines": "lines",
+      "customColors": "Custom colors",
+      "colorRevert": "Revert to preset",
+      "colorResetAll": "Reset all colors to preset",
+      "previewPrompt": "$ claude --version",
+      "colors": {
+        "background": "Background",
+        "foreground": "Text",
+        "cursor": "Cursor",
+        "black": "Black",
+        "red": "Red",
+        "green": "Green",
+        "yellow": "Yellow",
+        "blue": "Blue",
+        "magenta": "Magenta",
+        "cyan": "Cyan",
+        "white": "White",
+        "brightBlack": "Bright Black",
+        "brightRed": "Bright Red",
+        "brightGreen": "Bright Green",
+        "brightYellow": "Bright Yellow",
+        "brightBlue": "Bright Blue",
+        "brightMagenta": "Bright Magenta",
+        "brightCyan": "Bright Cyan",
+        "brightWhite": "Bright White"
+      }
+    },
+    "alerts": {
+      "cpu": {
+        "title": "CPU usage alert"
+      },
+      "memory": {
+        "title": "Memory usage alert"
+      },
+      "threshold": "Threshold",
+      "sustain": "Sustain time before firing",
+      "seconds": "s",
+      "soundEnabled": "Play sound on alert"
+    },
+    "backend": {
+      "checkOnStartup": "Check connections on startup",
+      "checkOnStartupHint": "Automatically verify saved backend connections each time the app loads.",
+      "alertOnFailure": "Alert when a connection fails",
+      "checkAll": "Check all"
+    }
+  },
+  "alert": {
+    "title": {
+      "cpu": "High CPU usage",
+      "memory": "High memory usage",
+      "both": "High system load"
+    },
+    "message": "System resource usage has exceeded the configured threshold.",
+    "dismiss": "Dismiss",
+    "backend": {
+      "title": "Backend connection needs attention",
+      "message": "Some backends could not be reached. Check their connection.",
+      "recheck": "Re-check"
+    }
+  },
+  "agents": {
+    "noAgentsYet": "No agents yet",
+    "startSession": "Start a Claude Code session — it will appear here automatically.",
+    "projects": "Projects",
+    "subAgent": "sub-agent",
+    "agent": "agent",
+    "subAgents": "Sub-agents",
+    "activeTotal": "{{active}} active / {{total}} total",
+    "activeOnly": "{{active}} active",
+    "agentCount_one": "{{count}} agent",
+    "agentCount_other": "{{count}} agents",
+    "activeSlash": "{{active}} active / ",
+    "hideInactive": "hide inactive",
+    "inactiveCount": "+{{count}} inactive",
+    "clickToRename": "Double-click to rename",
+    "clickToRenameProject": "Click to rename this project",
+    "events": "events",
+    "tools": "tools",
+    "startedAt": "Started at",
+    "totalEvents": "Total events received",
+    "generalAgent": "General Agent",
+    "externalShort": "EXT",
+    "externalBadgeTitle": "Session running in a terminal outside this app",
+    "resumeExternalHint": "External session — click to resume here",
+    "sshError": "error",
+    "sshSessions": "SSH Sessions"
+  },
+  "states": {
+    "spawning": "Starting",
+    "idle": "Idle",
+    "listening": "Thinking",
+    "active": "Working",
+    "waiting": "Action needed",
+    "error": "Error",
+    "done": "Done",
+    "despawning": "Ending",
+    "removed": "Removed"
+  },
+  "notifications": {
+    "needsPermission": "Needs permission",
+    "errorOccurred": "Error occurred",
+    "taskCompleted": "Task completed",
+    "toggle": "Toggle browser notifications",
+    "enable": "Enable browser notifications",
+    "disable": "Disable browser notifications",
+    "denied": "Notifications blocked — allow in browser settings",
+    "unknownProject": "Unknown project",
+    "folder": "Folder",
+    "agent": "Agent",
+    "input": "Input",
+    "tool": "Tool"
+  },
+  "activity": {
+    "title": "Recent Activity",
+    "tools": "tools",
+    "prompts": "prompts",
+    "permissions": "permissions",
+    "system": "system"
+  },
+  "eventStream": {
+    "title": "Live Event Stream",
+    "waiting": "Waiting for events...",
+    "unknownAgent": "unknown"
+  },
+  "hookEvents": {
+    "SessionStart": "Session started",
+    "SessionEnd": "Session ended",
+    "UserPromptSubmit": "User input",
+    "PreToolUse": "Tool started",
+    "PostToolUse": "Tool finished",
+    "PostToolUseFailure": "Tool failed",
+    "PermissionRequest": "Permission needed",
+    "Stop": "Stopped",
+    "Notification": "Notification",
+    "SubagentStart": "Sub-agent started",
+    "SubagentStop": "Sub-agent stopped",
+    "TeammateIdle": "Teammate idle",
+    "TaskCompleted": "Task completed",
+    "ConfigChange": "Config changed",
+    "PreCompact": "Compacting",
+    "WorktreeCreate": "Worktree created",
+    "WorktreeRemove": "Worktree removed"
+  },
+  "time": {
+    "justNow": "just now",
+    "secondsAgo": "{{count}}s ago",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago"
+  },
+  "completionLog": {
+    "title": "Completed Sessions",
+    "empty": "No completed sessions yet",
+    "sessionCompleted": "Session completed",
+    "viewAll": "View all →",
+    "tokensShort": "tok"
+  },
+  "todo": {
+    "title": "To-do",
+    "placeholder": "Add a note, press Enter to save",
+    "empty": "No items yet",
+    "remove": "Remove",
+    "confirmRemove": "Remove this item?"
+  },
+  "efficio": {
+    "title": "Efficio — Size-adjusted Waste",
+    "refresh": "Refresh",
+    "loading": "Loading…",
+    "empty": "No efficio data yet. Run the collector to score past sessions:",
+    "noData": "No sessions in range",
+    "sessions": "{{count}} sessions",
+    "lastUpdated": "Last collected",
+    "percentile": "Waste percentile",
+    "axis": {
+      "w2": "Context invalidation",
+      "wc": "Edit churn",
+      "bash": "Bash trial-and-error",
+      "w3": "Re-exploration"
+    },
+    "status": {
+      "subj": "Subjective-validated (H1)",
+      "obj-weak": "Weak objective correlation",
+      "none": "Unvalidated (experimental)"
+    },
+    "view": {
+      "subtitle": "Size-adjusted waste signals across your sessions (0-token, deterministic)",
+      "caveat": "Two-dimensional waste (MTMM): perceived (W2) and behavioral (WC/Bash) axes diverge — sometimes oppose. Which is 'real' waste is a value judgment. Direction validity unmeasured.",
+      "model": "Reference model v{{version}}",
+      "last": "Last {{count}} sessions",
+      "tab": {
+        "sessions": "Sessions",
+        "scatter": "Size vs residual",
+        "timeline": "Multi-axis timeline",
+        "distribution": "Distribution",
+        "candidates": "Improvement candidates",
+        "reports": "Reports"
+      },
+      "scatterX": "Session size (tokens)",
+      "scatterY": "Residual (size-adjusted)",
+      "scatterHint": "Above the line = more waste than size predicts",
+      "distHint": "Where each session sits in your own corpus",
+      "actual": "actual",
+      "expected": "expected",
+      "residual": "residual",
+      "turns": "{{count}} turns",
+      "tokens": "{{value}} tok",
+      "noSignal": "no signal",
+      "selectSession": "Click a session for its 4-axis detail",
+      "count": "{{count}} sessions",
+      "candHint": "Not a percentile — concrete commands/files you repeated. Repeats across multiple sessions are the strongest CLAUDE.md rule candidates.",
+      "candBash": "Repeated Bash commands",
+      "candEdits": "Repeatedly edited files",
+      "candNone": "No repeats in range",
+      "candSessions": "{{count}} sessions",
+      "candAcross": "In {{sessions}} sessions, {{total}} repeats total",
+      "repeats": "Repeated in this session"
+    },
+    "cluster": {
+      "perceived": "Perceived",
+      "behavioral": "Behavioral"
+    },
+    "report": {
+      "noData": "No data in range",
+      "nSessions": "{{count}} sessions",
+      "trendTitle": "Trend",
+      "trendDesc": "Linear trend of waste percentile over recent sessions (for the selected axis). Rising means getting worse.",
+      "trendRising": "Rising +{{slope}}/session",
+      "trendFalling": "Falling -{{slope}}/session",
+      "trendFlat": "Flat",
+      "trendAlert": "worsening",
+      "projectTitle": "By project",
+      "projectDesc": "Average waste percentile per project — which project is inefficient for its size.",
+      "cacheTitle": "Cache efficiency",
+      "cacheDesc": "Cache reuse = read / (read + creation). Higher means context is reused rather than re-invalidated.",
+      "cacheReuse": "{{read}} read · {{creation}} created across {{count}} sessions",
+      "weeklyTitle": "Weekly summary",
+      "weeklyDesc": "Per-week average waste and that week's top sessions.",
+      "weekAvg": "avg {{pct}}%"
+    }
+  },
+  "pixelOffice": {
+    "title": "Pixel Office"
+  },
+  "error": {
+    "somethingWentWrong": "Something went wrong. Check the browser console for details.",
+    "retry": "Retry"
+  },
+  "pixelStates": {
+    "active": "working",
+    "idle": "idle",
+    "listening": "listening",
+    "spawning": "spawning",
+    "waiting": "waiting...",
+    "error": "error!",
+    "done": "done",
+    "despawning": "leaving",
+    "removed": "gone"
+  },
+  "stats": {
+    "title": "Agent Stats",
+    "active": "Active",
+    "total": "Total",
+    "subagentTypes": "Sub-agent Types",
+    "topTools": "Top Tools",
+    "calls": "calls",
+    "noData": "No activity yet"
+  },
+  "tokens": {
+    "title": "Token Usage",
+    "input": "Input",
+    "output": "Output",
+    "cacheCreation": "Cache Write",
+    "cacheRead": "Cache Read",
+    "total": "Total",
+    "apiCalls": "API Calls",
+    "model": "Model"
+  },
+  "terminal": {
+    "newTab": "New tab",
+    "newChat": "New Chat",
+    "resumingSession": "resuming session…",
+    "parentDir": "Parent directory",
+    "tabLabel": "Terminal {{n}}",
+    "exited": "Exited",
+    "status": {
+      "waiting": "Waiting"
+    },
+    "selectWorkingDir": "Select working directory",
+    "customPathPlaceholder": "~/path/to/project",
+    "customPathHint": "Enter a path and press Enter, or select a project above",
+    "skipPermissions": "Skip permissions (--dangerously-skip-permissions)",
+    "skipPermissionsWarning": "Claude will execute all tools without asking for permission.",
+    "modePopup": "Popup",
+    "modeBottom": "Bottom",
+    "modeRight": "Right",
+    "modeFullscreen": "Fullscreen",
+    "modeFullscreenDisabled": "Fullscreen is unavailable in Prompt/Efficio view",
+    "selectHere": "Select",
+    "tabLocal": "Local folder",
+    "tabSsh": "SSH remote",
+    "quickSelect": "Quick select",
+    "browseSection": "Browse",
+    "startHere": "Start in this folder",
+    "variantClaudeHint": "Run the standard `claude` CLI",
+    "variantAgentsHint": "Run `claude agents`",
+    "emptyDir": "No subdirectories",
+    "collapse": "Minimize",
+    "closeDialog": "Close",
+    "doubleClickRename": "Double-click to rename",
+    "closeConfirm": {
+      "title": "Close terminal",
+      "message": "Close this terminal session? Any running work will be terminated.",
+      "confirm": "Close",
+      "cancel": "Cancel"
+    },
+    "reorderTab": "Reorder tab",
+    "menu": {
+      "localFolder": "Open local folder…",
+      "sshPresets": "SSH presets",
+      "manageSsh": "New SSH preset…",
+      "recentFolders": "Recent folders",
+      "noRecentFolders": "No recently used folders",
+      "noSshPresets": "No SSH presets yet — add one below",
+      "removeRecentFolder": "Remove from recent"
+    },
+    "ssh": {
+      "dialogTitle": "SSH connection presets",
+      "newTitle": "New preset",
+      "editTitle": "Edit preset",
+      "modeFreeform": "Command",
+      "modeStructured": "Host",
+      "labelField": "Name",
+      "labelPlaceholder": "Studio server",
+      "commandField": "SSH command",
+      "commandHint": "e.g. `ssh studio` — uses your ~/.ssh/config, keys, and agent",
+      "host": "Host",
+      "port": "Port",
+      "user": "User",
+      "identityFile": "Identity file",
+      "structuredHint": "Fill in host to preview the generated command",
+      "autoRun": "Run the command automatically when the tab opens",
+      "securityNote": "Passwords are never stored. Answer any password prompt in the terminal, or use key-based auth / ssh-agent.",
+      "savePreset": "Save preset",
+      "saveChanges": "Save changes",
+      "cancelEdit": "Cancel",
+      "connect": "Connect",
+      "edit": "Edit",
+      "delete": "Delete",
+      "confirmDelete": "Delete preset “{{label}}”?"
+    },
+    "sshError": {
+      "permission-denied": "SSH: permission denied — check key or password",
+      "connection-refused": "SSH: connection refused — host may be down or port closed",
+      "dns": "SSH: host not found — check the hostname",
+      "timeout": "SSH: connection timed out — check network or firewall",
+      "host-key": "SSH: host key verification failed",
+      "host-key-changed": "SSH: remote host identification has changed — possible MITM",
+      "unknown": "SSH: connection failed"
+    },
+    "resumeConfirm": {
+      "title": "Resume this session?",
+      "message": "This session may still be running in another terminal. Resuming opens a second copy that writes to the same transcript, which can corrupt it. Only continue if you are sure the original is no longer active.",
+      "cancel": "Cancel",
+      "confirm": "Resume anyway"
+    }
+  },
+  "chat": {
+    "title": "Chat",
+    "placeholder": "Send a message...",
+    "send": "Send",
+    "you": "You",
+    "agent": "Agent"
+  },
+  "viewMode": {
+    "label": "View mode",
+    "groupMonitor": "Monitor",
+    "groupTools": "Tools",
+    "animation": "Animation",
+    "list": "List",
+    "prompt": "Prompt",
+    "efficio": "Efficio",
+    "tickets": "Tickets",
+    "spread": "Spread",
+    "jarvis": "Jarvis",
+    "workspace": "Workspaces",
+    "board": "Board",
+    "data": "Data",
+    "archive": "Session Management",
+    "ticketMgmt": "Ticket Management",
+    "backends": "Backends"
+  },
+  "board": {
+    "tab": {
+      "work": "Work",
+      "cost": "Cost"
+    },
+    "subtab": {
+      "outcome": "Outcome",
+      "quality": "Quality",
+      "efficiency": "Efficiency",
+      "process": "Process"
+    },
+    "empty": {
+      "noSession": "No linked session",
+      "noData": "No data",
+      "pickTicket": "Select a ticket"
+    },
+    "pickRun": "Pick a run in the sidebar"
+  },
+  "data": {
+    "title": "LLM Usage Data",
+    "subtitle": "Token usage, per-model usage, call counts and cost from Claude Code transcripts (ccusage-style).",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing…",
+    "filter": {
+      "title": "Date range",
+      "from": "From",
+      "to": "To",
+      "preset": {
+        "all": "All",
+        "last7": "Last 7 days",
+        "last30": "Last 30 days",
+        "thisMonth": "This month"
+      },
+      "reset": "Reset filter",
+      "scoped": "Selected range",
+      "rangeDays": "Range total ({{count}} days)",
+      "dailyAvg": "Daily average",
+      "empty": "No usage data in the selected range.",
+      "invalid": "Start date is after end date. Pick a valid range."
+    },
+    "unreachable": {
+      "title": "Server unreachable",
+      "body": "Could not reach the server to load usage data."
+    },
+    "empty": {
+      "title": "No usage data yet",
+      "body": "Use Claude Code and your token/model usage will show up here."
+    },
+    "stat": {
+      "totalTokens": "Total tokens",
+      "totalCost": "Total cost",
+      "totalCalls": "Total calls",
+      "models": "Models",
+      "ticketsOnly": "tickets + delegations only",
+      "ccusageBased": "from transcripts (ccusage)",
+      "distinct": "distinct models",
+      "records": "{{count}} records",
+      "today": "Today",
+      "thisWeek": "This week",
+      "thisMonth": "This month"
+    },
+    "period": {
+      "day": "Day",
+      "week": "Week",
+      "month": "Month"
+    },
+    "chart": {
+      "tokensByPeriod": "Tokens over time",
+      "empty": "No data for this period."
+    },
+    "table": {
+      "title": "By model",
+      "model": "Model",
+      "input": "Input",
+      "output": "Output",
+      "cache": "Cache",
+      "total": "Total",
+      "cost": "Cost",
+      "calls": "Calls",
+      "share": "Share"
+    },
+    "footnote": "Parsed from Claude Code transcripts (~/.claude/projects), deduped per message and priced per model — the same method as ccusage. Calls = assistant messages."
+  },
+  "backends": {
+    "title": "Backend connections",
+    "subtitle": "Connect the orchestrator (Claude) and the sub-agents it delegates to, and check their status.",
+    "loading": "Loading…",
+    "check": "Check",
+    "checking": "Checking…",
+    "connected": "Connected",
+    "failed": "Failed",
+    "unknown": "Unchecked",
+    "kind": {
+      "orchestrator": "orchestrator",
+      "subagent": "sub-agent",
+      "location": "location"
+    },
+    "sshHosts": "SSH hosts",
+    "sshHostsHint": "Hosts registered here become selectable as a ticket 'location' (run remotely). The remote host must have claude installed and authenticated.",
+    "sshLabel": "Name (optional)",
+    "sshHost": "Host (e.g. 192.168.100.99)",
+    "sshUser": "User (e.g. dev)",
+    "sshAdd": "Add host",
+    "remove": "Remove"
+  },
+  "tickets": {
+    "heroPrompt": "What do you want to solve?",
+    "newGoalPlaceholder": "Describe a goal — the agent runs it autonomously",
+    "selectFolder": "Select project folder",
+    "changeFolder": "Change",
+    "location": "Location",
+    "locationLocal": "Local",
+    "remotePickerTitle": "Select remote folder",
+    "remotePathPlaceholder": "Remote path, e.g. /home/dev/project",
+    "pickerTitle": "Choose project folder",
+    "useThisFolder": "Use this folder",
+    "create": "Solve",
+    "creating": "Creating…",
+    "empty": "None",
+    "clearClosed": "Clear",
+    "clearClosedConfirm": "Delete all {{count}} closed tickets?",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "detail": "Details",
+    "intervene": "Inspect",
+    "evaluateLabel": "Evaluation",
+    "evalGood": "Good",
+    "evalBad": "Bad",
+    "evalVeryGood": "Very good",
+    "evalVeryBad": "Very bad",
+    "evalNeutral": "Neutral",
+    "evalWeight": "Weight",
+    "evalNotePlaceholder": "Note (optional) — why good/bad",
+    "evalSaved": "Saved",
+    "evalAuto": "Auto",
+    "close": "Close",
+    "goalLabel": "Request",
+    "headlineLabel": "Answer",
+    "resultLabel": "Full result",
+    "verificationLabel": "Verification",
+    "failureLabel": "Failure",
+    "noResult": "No result",
+    "orchestrate": "Run as orchestrator",
+    "orchestrateHint": "(may delegate to sub-agents)",
+    "presetLabel": "Run profile",
+    "preset": {
+      "fast": "Fast",
+      "medium": "Medium",
+      "standard": "Standard",
+      "deep": "Deep",
+      "expert": "Expert",
+      "ultimate": "Ultimate"
+    },
+    "runPreset": "Run profile",
+    "runRequestedModel": "Requested model",
+    "runFlagsDropped": "Unsupported on target",
+    "evaluatePrompt": "Rate:",
+    "runInfoLabel": "Run info",
+    "delegationsLabel": "Delegations (sub-agents)",
+    "runModel": "Model",
+    "runEffort": "Effort",
+    "runThinking": "Extended thinking",
+    "runSessionId": "Session ID",
+    "runInput": "Input tokens",
+    "runOutput": "Output tokens",
+    "runCacheRead": "Cache read",
+    "runCacheCreate": "Cache write",
+    "runTotal": "Total tokens",
+    "runCost": "Cost",
+    "runTurns": "Turns",
+    "runDuration": "Duration",
+    "runRounds": "Rounds",
+    "decisionLabel": "Decision needed",
+    "decisionPending": "Waiting for your decision",
+    "decisionAnswer": "Type your answer or decision…",
+    "decisionPickHint": "Click an option to fill the reply; edit it, then hit Send.",
+    "answerCta": "Answer",
+    "threadLabel": "Conversation",
+    "threadUser": "You",
+    "threadAgent": "Agent",
+    "threadDecision": "Needs a decision",
+    "send": "Send",
+    "sending": "Sending…",
+    "columns": {
+      "active": "In progress",
+      "decision": "Decision",
+      "complete": "Complete",
+      "closed": "Closed",
+      "done": "Closed",
+      "failed": "Failed"
+    },
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "verifying": "Verifying",
+      "decision": "Decision",
+      "done": "Closed",
+      "failed": "Failed"
+    },
+    "failureReason": {
+      "error": "Agent error",
+      "verification-failed": "Verification failed",
+      "verification-inconclusive": "Verification inconclusive",
+      "timeout": "Timed out",
+      "cancelled": "Cancelled",
+      "interrupted": "Interrupted (server restart)",
+      "cwd-not-allowed": "Working directory not allowed",
+      "usage-limit": "Usage limit reached",
+      "model-unavailable": "Model unavailable"
+    },
+    "agentExit": {
+      "cause": {
+        "terminated": "Stopped from outside (SIGTERM)",
+        "interrupted": "Interrupted (SIGINT)",
+        "hangup": "Parent process went away (SIGHUP)",
+        "killed": "Force-killed (SIGKILL)",
+        "spawn-failed": "The agent never started",
+        "exited": "The agent exited with an error",
+        "no-result": "Finished without a result"
+      },
+      "meaning": {
+        "terminated": "The agent did not crash. Something outside it asked it to stop, and it shut itself down mid-run. The work up to that point was done and paid for — this is not a verdict on the work.",
+        "interrupted": "An interrupt (Ctrl-C, or a parent shell) reached the agent process and it stopped.",
+        "hangup": "The terminal or parent process the agent was attached to disappeared, so the OS hung the agent up.",
+        "killed": "The agent was killed outright with no chance to shut down or save anything. On macOS this is almost always memory pressure or an explicit kill -9.",
+        "spawn-failed": "No process ever ran: there is no exit status at all. This is an environment problem, not an agent problem.",
+        "exited": "The agent process ran and ended itself with a non-zero status. The reason is usually in its error output below.",
+        "no-result": "The process exited cleanly but never streamed a usable final answer, so there was nothing to verify."
+      },
+      "suspectsLabel": "Worth checking",
+      "suspect": {
+        "cancel": "A cancel request for this ticket (from the dashboard or the phone app)",
+        "serverStop": "The open-alive server was stopped or restarted",
+        "otherTool": "Another tool or script on this machine cleaning up processes",
+        "manualKill": "Someone running kill <pid> by hand",
+        "ctrlC": "Ctrl-C in the terminal that started the server",
+        "processGroup": "An interrupt delivered to the server's whole process group",
+        "terminalClosed": "The terminal that started the server was closed",
+        "sshDropped": "An SSH session carrying the run dropped",
+        "memoryPressure": "OS memory pressure (jetsam / OOM killer)",
+        "kill9": "An explicit kill -9",
+        "supervisor": "A container or supervisor forcing the process down",
+        "notOnPath": "The `claude` binary is not on the server's PATH",
+        "cwdUnreadable": "The working directory is missing or unreadable",
+        "sshUnreachable": "For a remote run, the SSH host could not be reached",
+        "usageError": "A bad CLI flag or argument",
+        "authOrQuota": "Expired auth or a usage limit",
+        "agentError": "An error inside the agent — read the error output below",
+        "maxTurns": "The run hit its maximum number of turns",
+        "streamCutOff": "The output stream ended before the result event"
+      },
+      "nextLabel": "Next:",
+      "next": {
+        "terminated": "Retry the ticket — nothing about the work failed.",
+        "interrupted": "Start the server detached so an interrupt cannot reach the agents, then retry.",
+        "hangup": "Run the server in the background (open-alive start) and retry.",
+        "killed": "Check memory use and lower the number of tickets running at once, then retry.",
+        "spawn-failed": "Fix the environment first — confirm the server can find `claude` and reach the working directory.",
+        "exited": "Read the error output below before retrying.",
+        "no-result": "Narrow the goal or split it into rounds, then retry."
+      },
+      "resumeHint": "The Claude session was captured, so the thread can be continued with `claude --resume <session id>` (see the run info below).",
+      "fieldCode": "Exit code",
+      "fieldSignal": "Signal",
+      "fieldRanFor": "Ran for",
+      "fieldRound": "Round",
+      "fieldSubtype": "Result subtype",
+      "fieldResumable": "Resumable",
+      "resumableYes": "yes — session captured",
+      "resumableNo": "no — no session was captured",
+      "inferred": "inferred from the exit code",
+      "stderrLabel": "Error output"
+    },
+    "startedAt": "Started",
+    "reviewCta": "Review",
+    "verificationReportLabel": "Review report",
+    "advisoryLabel": "Advisory panel",
+    "verdictLabel": "Verdict",
+    "gateLabel": "Gate (Claude)",
+    "consensusLabel": "Consensus",
+    "abstainedLabel": "No answer",
+    "commitLabel": "Commit",
+    "commitSkipped": "not committed",
+    "filesLabel": "files",
+    "resolutionLabel": "Adopted",
+    "tiebreakLabel": "Tiebreak",
+    "flaggedLabel": "Dissent",
+    "gapLabel": "Weakest point:",
+    "coverageLabel": "Goal coverage:",
+    "escalationLabel": "Escalated",
+    "reviewPhase": {
+      "unverified": "unverified",
+      "verifying": "verifying",
+      "verified": "verified",
+      "verifyFailed": "verification failed",
+      "decisionPending": "decision pending",
+      "decisionRunning": "deciding",
+      "decisionDone": "decided",
+      "decisionFailed": "decision failed",
+      "failed": "failed"
+    },
+    "decisionStage": {
+      "pending": "decision pending",
+      "deciding": "deciding",
+      "decided": "decided",
+      "failed": "decision failed"
+    },
+    "autoCommit": "Commit when verified",
+    "autoCommitHint": "Commits locally after the gate passes. Never pushes.",
+    "autoCommitRemoteHint": "Remote ticket — the agent is asked to commit on the host. Never pushes.",
+    "panelReview": "Cross-check with other models",
+    "panelReviewHint": "Sends the goal and the report to third-party models. Off = local gate only.",
+    "panelOffLabel": "Panel off — local gate only",
+    "runsOn": "Runs on {{target}} over SSH",
+    "createFailed": "Could not create the ticket (HTTP {{status}})",
+    "createNetworkError": "Cannot reach the server — is it running?"
+  },
+  "spread": {
+    "empty": "No open terminals",
+    "emptyHint": "Open a chat and it will appear here",
+    "tileHint": "Click a tile to type into it here; double-click or ⤢ to maximize",
+    "hint": {
+      "focus": "focus",
+      "swap": "move",
+      "resize": "resize",
+      "maximize": "maximize"
+    },
+    "shortcut": {
+      "focusLeft": "Focus left",
+      "focusRight": "Focus right",
+      "focusUp": "Focus up",
+      "focusDown": "Focus down",
+      "swapLeft": "Move tile left",
+      "swapRight": "Move tile right",
+      "swapUp": "Move tile up",
+      "swapDown": "Move tile down",
+      "shrinkWidth": "Shrink width",
+      "growWidth": "Grow width",
+      "shrinkHeight": "Shrink height",
+      "growHeight": "Grow height",
+      "maximize": "Maximize",
+      "resetLayout": "Reset layout"
+    }
+  },
+  "prompt": {
+    "listTitle": "Recent prompts",
+    "empty": "No prompts captured yet. Use Claude Code with the hooks installed and they will appear here.",
+    "loading": "Loading…",
+    "unreachable": {
+      "title": "Failed to load prompt data",
+      "body": "Cannot reach the open-alive server or the prompt API is not responding. Make sure the server is running and try again."
+    },
+    "subtab": {
+      "dashboard": "Dashboard",
+      "prompts": "Prompts"
+    },
+    "dashboard": {
+      "totalPrompts": "Total prompts",
+      "avgScore": "Avg score",
+      "avgScoreHint": "0–100 scale",
+      "goodRatio": "GOOD ratio",
+      "activeDays": "Active days (30d)",
+      "scoreTrend": "Score trend (last 30 days)",
+      "legendScore": "Avg score (0–100)",
+      "legendCount": "Prompt count",
+      "tierDistribution": "Tier distribution",
+      "topImprovements": "Common improvement areas",
+      "topImprovementsEmpty": "No rule hits yet.",
+      "recentCards": "Recent prompts"
+    },
+    "detail": {
+      "empty": "Select a prompt on the left to see improvements and coaching context.",
+      "notFound": "Prompt not found.",
+      "promptHeader": "Prompt",
+      "improvementsHeader": "Improvements",
+      "improvementsEmpty": "No improvements — looks like a strong prompt.",
+      "hitsHeader_one": "1 rule hit",
+      "hitsHeader_other": "{{count}} rule hits",
+      "hitsEmpty": "No rule hits — looks clean.",
+      "coachHeader": "Coaching hint injected into Claude",
+      "efficiencyShort": "efficiency",
+      "baselineDelta": "vs your baseline: {{delta}}"
+    },
+    "confidence": {
+      "high": "confident",
+      "medium": "estimate",
+      "low": "reference"
+    }
+  },
+  "listView": {
+    "title": "Agents",
+    "col": {
+      "name": "Agent",
+      "state": "State",
+      "tool": "Tool",
+      "project": "Project",
+      "events": "Events",
+      "lastEvent": "Last event"
+    }
+  },
+  "bubble": {
+    "readingTool": "Reading {{tool}}...",
+    "reading": "Reading...",
+    "searching": "Searching files...",
+    "runningBash": "Running command...",
+    "runningTest": "Running tests...",
+    "thinking": "Hmm, thinking...",
+    "typing": "Writing code...",
+    "waiting": "Waiting for permission...",
+    "error": "Something went wrong...!",
+    "listening": "Listening!",
+    "done": "Done! Good work~",
+    "idle": "Standing by..."
+  },
+  "dashboard": {
+    "title": "Sessions",
+    "subtitle": "Live and resumable Claude sessions. Click a card to open, focus, or resume.",
+    "empty": "No sessions yet. Start a new chat from the sidebar.",
+    "section": {
+      "live": "Live · {{n}}",
+      "dormant": "Resumable · {{n}}"
+    },
+    "action": {
+      "focus": "Open",
+      "resume": "Resume"
+    },
+    "time": {
+      "now": "just now",
+      "minutesAgo": "{{n}}m ago",
+      "hoursAgo": "{{n}}h ago",
+      "daysAgo": "{{n}}d ago"
+    }
+  },
+  "workspaceTree": {
+    "loading": "Loading workspaces…",
+    "empty": "No sessions recorded yet.",
+    "unavailable": "The canonical event log is unavailable.",
+    "unavailableHint": "Sessions are still running; only this view cannot be read. See the server logs.",
+    "error": "Could not load the workspace tree.",
+    "sessionCount": "{{count}} sessions",
+    "sessionCount_one": "{{count}} session",
+    "pendingApprovals": "{{count}} awaiting approval",
+    "gitRepo": "git",
+    "folder": "folder",
+    "heuristic": "estimated",
+    "heuristicHint": "This state was inferred, not reported directly by the provider.",
+    "headerTitle": "Intervention control tower",
+    "headerSubtitle": "What is running per machine and repo, and where you need to respond",
+    "pendingTotal": "{{count}} awaiting you",
+    "pendingNone": "Nothing awaiting you",
+    "showPendingOnly": "Awaiting only",
+    "showAll": "Show all",
+    "allClear": "No sessions are awaiting a response.",
+    "allClearHint": "Switch back to Show all to see every session.",
+    "lastActiveTitle": "Last active",
+    "lastActiveNow": "just now",
+    "lastActiveMin": "{{count}}m ago",
+    "lastActiveHour": "{{count}}h ago",
+    "lastActiveDay": "{{count}}d ago"
+  },
+  "conversation": {
+    "selectPrompt": "Select a session to read its conversation.",
+    "loading": "Loading conversation…",
+    "empty": "No conversation recorded for this session.",
+    "notFound": "This session is not in the catalog.",
+    "unavailable": "The canonical event log is unavailable, so this conversation cannot be read.",
+    "error": "Could not load the conversation.",
+    "partialNotice": "Derived from hooks: one assistant message per turn, not the full streamed reply.",
+    "tool": "tool",
+    "approval": "Approval requested",
+    "systemEvent": "System",
+    "role": {
+      "user": "You",
+      "assistant": "Assistant",
+      "reasoning": "Reasoning"
+    },
+    "status": {
+      "running": "running",
+      "completed": "completed",
+      "failed": "failed"
+    },
+    "decision": {
+      "allow": "allowed",
+      "deny": "denied"
+    }
+  },
+  "sessionDetail": {
+    "tab": {
+      "conversation": "Conversation",
+      "terminal": "Terminal"
+    },
+    "terminalLoading": "Checking for a terminal…",
+    "terminalError": "Could not check the terminal for this session.",
+    "noTerminal": "No Alive-owned terminal for this session.",
+    "terminalLive": "A terminal is running for this session.",
+    "terminalExited": "This session's terminal has exited.",
+    "terminalTab": "Terminal tab: {{tabId}}",
+    "terminalHint": "Open it from the Chat view to interact with the raw output.",
+    "reason": {
+      "unknown-session": "This session is not in the catalog.",
+      "not-spawned-by-alive": "It was started outside Alive, so there is no process of ours to attach to. Its conversation is still readable from hooks.",
+      "lookup-failed": "The terminal registry could not be read; see the server logs."
+    }
+  },
+  "ticketMgmt": {
+    "listTitle": "By project",
+    "searchPlaceholder": "Search by goal, headline, or project",
+    "loading": "Loading…",
+    "empty": "No ticket records yet",
+    "unreachable": {
+      "title": "Ticket management unavailable",
+      "body": "Could not reach the server to load ticket records. This view is available on the local dashboard only."
+    },
+    "reflected": "Reflected",
+    "pending": "Pending",
+    "stat": {
+      "total": "total",
+      "good": "good",
+      "bad": "bad",
+      "reflected": "reflected"
+    },
+    "detail": {
+      "empty": "Select a ticket to dissect its result and score.",
+      "goal": "Request",
+      "result": "Result",
+      "noResult": "No result snapshot (older record).",
+      "verdict": "Verification",
+      "verdictPassed": "Passed",
+      "verdictFailed": "Failed",
+      "model": "Model",
+      "effort": "Effort",
+      "thinking": "Thinking",
+      "completedAt": "Completed"
+    },
+    "score": {
+      "title": "Score",
+      "good": "Good",
+      "bad": "Bad",
+      "unrated": "Unrated",
+      "weight": "Weight",
+      "notePlaceholder": "Note (optional) — reason",
+      "auto": "Auto",
+      "save": "Save",
+      "saved": "Saved"
+    },
+    "reflect": {
+      "title": "Bias reflection",
+      "on": "Reflected into bias",
+      "off": "Reflect into bias",
+      "hint": "Only reflected tickets shape this project's injected guide."
+    },
+    "guide": {
+      "title": "Current bias (injected guide)",
+      "empty": "Nothing reflected into bias yet for this project.",
+      "counts": "{{good}} good · {{bad}} bad reflected"
+    },
+    "viewSession": "View the process in the session",
+    "noSession": "No linked session"
+  },
+  "archive": {
+    "listTitle": "Completed tickets",
+    "searchPlaceholder": "Search by project, name, or prompt",
+    "loading": "Loading…",
+    "empty": "No completed sessions yet",
+    "tokensShort": "tok",
+    "bucket": {
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "week": "Earlier this week",
+      "earlier": "Earlier"
+    },
+    "unreachable": {
+      "title": "Archive unavailable",
+      "body": "Could not reach the server to load the completed-session archive."
+    },
+    "detail": {
+      "empty": "Select a completed session to see its details.",
+      "completedAt": "Completed",
+      "startedAt": "Started",
+      "duration": "Duration",
+      "events": "Events",
+      "toolCalls": "Tool calls",
+      "project": "Project",
+      "session": "Session ID",
+      "tools": "Tools used",
+      "tokens": "Token usage",
+      "lastPrompt": "Last prompt"
+    }
+  },
+  "sidebar": {
+    "title": "Repositories",
+    "openSummary": "{{count}} open",
+    "oldest": "oldest {{age}}",
+    "showClosed": "{{count}} done",
+    "newRun": "New run",
+    "noRepos": "No repositories yet",
+    "detached": "detached",
+    "allRepos": "All projects",
+    "allReposHint": "no filter",
+    "filteredBanner": "Filtered to {{name}}",
+    "clearFilter": "Show all",
+    "collapse": "Collapse {{name}}",
+    "expand": "Expand {{name}}",
+    "lastActivity": "{{age}} ago",
+    "noActivity": "no activity",
+    "stateRunning": "running",
+    "stateWaiting": "unfiled",
+    "stateClosed": "closed",
+    "stateAbandoned": "abandoned",
+    "originLocal": "Local — on this machine",
+    "originSsh": "Remote over SSH — {{target}}"
+  },
+  "run": {
+    "open": "Open",
+    "close": "Record result",
+    "abandon": "Just clear it",
+    "outcomePlaceholder": "One line: what came of this",
+    "closedAt": "closed",
+    "state": {
+      "running": "Running",
+      "waiting": "Needs you",
+      "closed": "Done",
+      "abandoned": "Cleared"
+    },
+    "touched": "{{count}} files changed",
+    "touchedMore": "+{{count}} more",
+    "verified": "Verifier"
+  },
+  "git": {
+    "label": "Branch",
+    "current": "on {{name}}",
+    "detached": "detached HEAD",
+    "switch": "Switch",
+    "create": "New branch",
+    "createFrom": "from {{name}}",
+    "delete": "Delete branch",
+    "deleteConfirm": "Delete the local branch \"{{name}}\"? Unmerged work is refused by git.",
+    "namePlaceholder": "feat/my-change",
+    "dirtyHint": "Uncommitted changes — commit or stash before switching.",
+    "notARepoHint": "Not a git repository; branch controls are unavailable.",
+    "switching": "Working…",
+    "error": {
+      "nameEmpty": "Enter a branch name.",
+      "nameWhitespace": "Branch names cannot contain spaces.",
+      "nameTooLong": "That branch name is too long.",
+      "nameReserved": "Branch names cannot contain ~ ^ : ? * [ ] \\\\ .. or @{",
+      "nameEdges": "Branch names cannot start or end that way.",
+      "notARepo": "This folder is not a git repository.",
+      "noSuchBranch": "No local branch named \"{{name}}\".",
+      "alreadyExists": "A branch named \"{{name}}\" already exists.",
+      "dirty": "There are uncommitted changes. Commit or stash them first.",
+      "deleteCurrent": "You cannot delete the branch you are on.",
+      "gitFailed": "git refused: {{message}}",
+      "network": "Could not reach the server."
+    }
+  },
+  "auth": {
+    "title": "Sign in to open-alive",
+    "body": "This server requires a token. Paste the device token from `open-alive token new`, or reopen the dashboard from `open-alive start`.",
+    "placeholder": "Device token",
+    "submit": "Connect",
+    "invalid": "That token was refused. Check it and try again."
+  },
+  "mobile": {
+    "listTitle": "Tickets",
+    "filterAll": "All",
+    "filterActive": "Running",
+    "filterDecision": "Needs answer",
+    "filterDone": "Done",
+    "empty": "No tickets yet",
+    "newTicket": "New ticket",
+    "composeTitle": "New ticket",
+    "goalLabel": "What should it do?",
+    "goalPlaceholder": "e.g. Translate the login error messages to Korean",
+    "projectLabel": "In which project",
+    "noProjects": "No project to choose from. Set OPEN_ALIVE_TICKET_ROOTS on the server.",
+    "presetLabel": "How deep",
+    "create": "Create",
+    "creating": "Creating…",
+    "back": "Back",
+    "resultLabel": "Result",
+    "noResult": "No result",
+    "questionLabel": "The agent is asking",
+    "answerPlaceholder": "Type your answer",
+    "send": "Send",
+    "sending": "Sending…",
+    "cancelTicket": "Cancel",
+    "retryTicket": "Retry",
+    "offline": "Disconnected from the server",
+    "tabTickets": "Tickets",
+    "tabSessions": "Sessions",
+    "sessionsEmpty": "No sessions running",
+    "sessionsLoading": "Loading…",
+    "conversationEmpty": "Nothing said yet",
+    "openTerminal": "Open terminal",
+    "terminalTitle": "Terminal",
+    "terminalInput": "Type a command",
+    "terminalSend": "Send",
+    "terminalNew": "New terminal",
+    "terminalAttaching": "Attaching…",
+    "terminalGone": "This terminal has exited",
+    "terminalReadOnly": "Read-only — input is not permitted",
+    "roleUser": "You",
+    "roleAssistant": "Agent",
+    "roleTool": "Tool",
+    "roleSystem": "System",
+    "needsApproval": "Awaiting approval",
+    "statusBadgeVerified": "Verified",
+    "statusBadgeFlagged": "Flagged",
+    "statusBadgeVerifying": "Verifying",
+    "statusBadgeUnverified": "Unverified",
+    "locationLocal": "Local",
+    "locationSsh": "SSH",
+    "settingsLabel": "Settings",
+    "branchLabel": "Branch",
+    "pickFolder": "Pick a folder",
+    "sheetClose": "Close",
+    "deleteTicket": "Delete",
+    "deleteConfirm": "Delete this ticket?",
+    "ratingLabel": "Rating",
+    "home": "Home — tickets",
+    "pullToRefresh": "Pull to refresh",
+    "releaseToRefresh": "Release to refresh",
+    "refreshing": "Refreshing…"
+  },
+  "appearance": {
+    "toggle": "Theme: {{current}} (click for {{next}})",
+    "dark": "Dark",
+    "light": "Light",
+    "system": "System"
+  }
+}

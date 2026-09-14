@@ -1,0 +1,246 @@
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import type { Repository, Run, RunKind, RunMeta, RunState, RunTree, TicketLocation, Worktree } from '@open-alive/core';
+import { mergeTouchedFiles } from '@open-alive/core';
+import { repoIdFor } from '@open-alive/core/runs/repoId';
+import { locationKeyFor, type ResolvedLocation } from './gitResolver.js';
+
+export interface RunUpsert {
+  runId: string;
+  location: ResolvedLocation;
+  kind: RunKind;
+  sourceId: string;
+  title: string;
+  /** Adapters only ever report `running` or `waiting`. */
+  state: Extract<RunState, 'running' | 'waiting'>;
+  startedAt: number;
+  /** When the source last did something. Defaults to `startedAt`. */
+  lastActivityAt?: number;
+  meta?: RunMeta;
+}
+
+export interface RunStore {
+  load(): Promise<void>;
+  tree(): RunTree;
+  upsert(input: RunUpsert): Run;
+  close(runId: string, outcome: string): Run | null;
+  /**
+   * Forget a run entirely. Used when the underlying source is deleted, where
+   * `close` would be a lie: a deleted ticket has no outcome, and leaving its run
+   * behind offers actions on work that no longer exists.
+   */
+  remove(runId: string): boolean;
+  /**
+   * Attach a location to repositories recorded before the field existed.
+   *
+   * A repository's id is `sha1(locationKey::root)`, so a candidate host can be
+   * CHECKED rather than guessed: only a repo whose id reproduces under that
+   * host's key was created for it. Returns how many were adopted.
+   */
+  backfillLocations(candidates: readonly TicketLocation[]): number;
+  /** Record a file this run wrote to. No-op for an unknown run or a repeat path. */
+  recordTouchedFile(runId: string, path: string): Run | null;
+  abandon(runId: string): Run | null;
+  subscribe(fn: (run: Run) => void): () => void;
+  flush(): Promise<void>;
+}
+
+interface Persisted {
+  repositories: Repository[];
+  worktrees: Worktree[];
+  runs: Run[];
+}
+
+const EMPTY: Persisted = { repositories: [], worktrees: [], runs: [] };
+
+export function createRunStore({ file }: { file: string }): RunStore {
+  let repositories = new Map<string, Repository>();
+  let worktrees = new Map<string, Worktree>();
+  let runs = new Map<string, Run>();
+  const listeners = new Set<(run: Run) => void>();
+  let flushing: Promise<void> | null = null;
+  let dirty = false;
+
+  async function write(): Promise<void> {
+    if (!dirty) return;
+    dirty = false;
+    const data: Persisted = {
+      repositories: [...repositories.values()],
+      worktrees: [...worktrees.values()],
+      runs: [...runs.values()],
+    };
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify(data, null, 2), 'utf-8');
+  }
+
+  async function scheduleFlush(): Promise<void> {
+    if (flushing) return flushing;
+    flushing = (async () => {
+      // Coalesce a burst of updates into one write.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await write();
+      flushing = null;
+    })();
+    return flushing;
+  }
+
+  /** Mark the tree changed so it is persisted, without telling subscribers. */
+  function touch(): void {
+    dirty = true;
+    void scheduleFlush();
+  }
+
+  function emit(run: Run): void {
+    for (const fn of listeners) fn(run);
+    touch();
+  }
+
+  return {
+    async load() {
+      let parsed: Persisted = EMPTY;
+      try {
+        const raw = await readFile(file, 'utf-8');
+        const json: unknown = JSON.parse(raw);
+        if (json && typeof json === 'object' && Array.isArray((json as Persisted).runs)) {
+          parsed = json as Persisted;
+        }
+      } catch {
+        parsed = EMPTY;
+      }
+      repositories = new Map(parsed.repositories.map((x) => [x.repoId, x]));
+      worktrees = new Map(parsed.worktrees.map((x) => [x.worktreeId, x]));
+      runs = new Map(parsed.runs.map((x) => [x.runId, x]));
+    },
+
+    tree() {
+      return {
+        repositories: [...repositories.values()],
+        worktrees: [...worktrees.values()],
+        runs: [...runs.values()],
+      };
+    },
+
+    backfillLocations(candidates) {
+      const keyed = candidates
+        .map((location) => ({ location, key: locationKeyFor(location) }))
+        .filter((c): c is { location: TicketLocation; key: string } => c.key !== undefined);
+      if (keyed.length === 0) return 0;
+
+      let adopted = 0;
+      for (const [repoId, repo] of repositories) {
+        if (repo.location) continue;
+        const match = keyed.find((c) => repoIdFor(repo.root, c.key) === repoId);
+        if (!match) continue;
+        repositories.set(repoId, { ...repo, location: match.location });
+        adopted += 1;
+      }
+      if (adopted > 0) touch();
+      return adopted;
+    },
+
+    upsert(input) {
+      repositories.set(input.location.repository.repoId, input.location.repository);
+      worktrees.set(input.location.worktree.worktreeId, input.location.worktree);
+
+      const prior = runs.get(input.runId);
+      // A human's close is final. Adapters keep reporting the underlying source
+      // long after the human filed it away; honouring those reports would
+      // resurrect closed work and make the "open" count meaningless.
+      const state: RunState =
+        prior && (prior.state === 'closed' || prior.state === 'abandoned') ? prior.state : input.state;
+
+      const next: Run = {
+        runId: input.runId,
+        repoId: input.location.repository.repoId,
+        worktreeId: input.location.worktree.worktreeId,
+        kind: input.kind,
+        sourceId: input.sourceId,
+        title: input.title,
+        state,
+        startedAt: prior?.startedAt ?? input.startedAt,
+        // Activity only ever moves forward: an adapter re-reporting an older
+        // snapshot must not make a run look staler than it is.
+        lastActivityAt: Math.max(
+          input.lastActivityAt ?? input.startedAt,
+          prior?.lastActivityAt ?? 0,
+        ),
+        meta: input.meta ?? prior?.meta,
+      };
+      if (prior?.outcome !== undefined) next.outcome = prior.outcome;
+      if (prior?.closedAt !== undefined) next.closedAt = prior.closedAt;
+      if (prior?.touchedFiles !== undefined) next.touchedFiles = prior.touchedFiles;
+
+      runs.set(next.runId, next);
+      emit(next);
+      return next;
+    },
+
+    recordTouchedFile(runId, path) {
+      const prior = runs.get(runId);
+      if (!prior) return null;
+      const touchedFiles = mergeTouchedFiles(prior.touchedFiles, path);
+      // Unchanged list = a duplicate or a full list; skip the write and the
+      // broadcast rather than churning every client on a repeated edit.
+      if (touchedFiles === prior.touchedFiles) return prior;
+      const next: Run = { ...prior, touchedFiles, lastActivityAt: Date.now() };
+      runs.set(runId, next);
+      emit(next);
+      return next;
+    },
+
+    close(runId, outcome) {
+      const prior = runs.get(runId);
+      if (!prior) return null;
+      // `lastActivityAt` deliberately survives untouched. Filing a run away is
+      // bookkeeping, not work: stamping it now would make three-week-old runs
+      // read as "1m ago" and would reorder the sidebar by when someone tidied
+      // up rather than by when anything happened. `closedAt` records the filing.
+      const next: Run = {
+        ...prior,
+        state: 'closed',
+        outcome: outcome.trim().slice(0, 300),
+        closedAt: Date.now(),
+      };
+      runs.set(runId, next);
+      emit(next);
+      return next;
+    },
+
+    remove(runId) {
+      const prior = runs.get(runId);
+      if (!prior) return false;
+      runs.delete(runId);
+      // The repository/worktree records stay: they are shared by every run in
+      // that checkout, and dropping them would empty the sidebar's hierarchy.
+      //
+      // Deliberately NOT `emit`: subscribers are typed `(run) => void` and the
+      // only one broadcasts `run:update`, which would put the run straight back
+      // on every client. Removal is announced by the caller instead.
+      touch();
+      return true;
+    },
+
+    abandon(runId) {
+      const prior = runs.get(runId);
+      if (!prior) return null;
+      // Same as `close`: abandoning does not count as activity (see above).
+      const next: Run = { ...prior, state: 'abandoned', closedAt: Date.now() };
+      delete next.outcome;
+      runs.set(runId, next);
+      emit(next);
+      return next;
+    },
+
+    subscribe(fn) {
+      listeners.add(fn);
+      return () => {
+        listeners.delete(fn);
+      };
+    },
+
+    async flush() {
+      if (flushing) await flushing;
+      await write();
+    },
+  };
+}

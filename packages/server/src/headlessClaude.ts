@@ -1,0 +1,225 @@
+/**
+ * Spawns `claude -p` in headless stream-json mode and reduces its output to an
+ * outcome (spec §아키텍처.2, `headlessClaude.ts`).
+ *
+ * Not a PTY: headless mode needs no TTY and writes newline-delimited JSON to
+ * stdout, so a plain child process suffices. The process is injectable (like
+ * `codexSupervisor.ts`) so the runner can be driven in tests with a stub that
+ * emits canned stream-json — no `claude` install, no live model calls.
+ */
+import { spawn } from 'node:child_process';
+import type { Readable } from 'node:stream';
+import { augmentPath } from '@open-alive/core';
+import { createStreamJsonParser, type StreamEvent, type StreamResult } from './streamJson.js';
+
+/** Removed to avoid nested-session errors when the daemon itself runs under Claude Code. */
+const CLAUDE_ENV_KEYS = ['CLAUDECODE', 'CLAUDE_CODE_SSE_PORT', 'CLAUDE_CODE_ENTRYPOINT'];
+
+export interface HeadlessProcessHandle {
+  stdout: Readable;
+  stderr: Readable;
+  kill(): void;
+  /**
+   * `signal` is the second half of the story and must not be dropped: a process
+   * killed by a signal it does not handle exits with `code: null`, which is
+   * indistinguishable from "never started" unless the signal comes with it.
+   */
+  onExit(cb: (code: number | null, signal?: string | null) => void): void;
+}
+
+/** Model/effort flags for one run. Already filtered against the target's capabilities. */
+export interface HeadlessRunFlags {
+  /** `--model` value (alias or full id). Omitted = the CLI's configured default. */
+  model?: string;
+  /** `--effort` value. Omitted = the user's global `effortLevel` setting. */
+  effort?: string;
+}
+
+export interface HeadlessSpawnArgs {
+  goal: string;
+  cwd: string;
+  permissionMode: string;
+  env: NodeJS.ProcessEnv;
+  /** Resume a prior Claude session (`--resume <id>`) for follow-up turns. */
+  resumeSessionId?: string;
+  /** Per-run model/effort selection (spec: ticket run presets). */
+  flags?: HeadlessRunFlags;
+}
+
+export interface HeadlessRunOptions {
+  goal: string;
+  cwd: string;
+  /**
+   * Required, no default. The privileged `bypassPermissions` mode must be an
+   * explicit, visible choice at each call site — never a silent library default
+   * (security review #1). Callers pass a mode from trusted server config, not
+   * from an HTTP body.
+   */
+  permissionMode: string;
+  /** Resume a prior Claude session (`--resume <id>`) so a reply continues the thread. */
+  resumeSessionId?: string;
+  /** Dir prepended to the agent's PATH (e.g. so an orchestrator can call `oa-delegate`). */
+  pathPrepend?: string;
+  /** Extra env vars for the agent process (e.g. OA_TICKET_ID for delegation tagging). */
+  extraEnv?: Record<string, string>;
+  /** Per-run model/effort selection, pre-filtered against the CLI's capabilities. */
+  flags?: HeadlessRunFlags;
+  /** Injectable spawn for tests. Production builds a real `claude` child process. */
+  spawnProcess?: (args: HeadlessSpawnArgs) => HeadlessProcessHandle;
+  /** Observe each classified stream event (activity is intentionally opaque). */
+  onEvent?: (e: StreamEvent) => void;
+}
+
+export interface HeadlessOutcome {
+  exitCode: number | null;
+  /** Signal that killed the process, when the OS reported one. */
+  signal?: string | null;
+  result: StreamResult | null;
+  sessionId: string | null;
+  stderr: string;
+}
+
+export interface HeadlessRunHandle {
+  kill(): void;
+  done: Promise<HeadlessOutcome>;
+}
+
+/**
+ * Build the argv for `claude`. `--verbose` is required for stream-json to emit
+ * per-turn events. `flags` is appended only for values the caller has already
+ * confirmed the target CLI supports (see `agentFlags.ts`) — this function does no
+ * capability checking of its own.
+ */
+export function buildHeadlessArgs(
+  goal: string,
+  permissionMode: string,
+  resumeSessionId?: string,
+  flags?: HeadlessRunFlags,
+): string[] {
+  const args = ['-p', goal, '--output-format', 'stream-json', '--verbose', '--permission-mode', permissionMode];
+  if (resumeSessionId) args.push('--resume', resumeSessionId);
+  if (flags?.model) args.push('--model', flags.model);
+  if (flags?.effort) args.push('--effort', flags.effort);
+  return args;
+}
+
+export function cleanEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined && !CLAUDE_ENV_KEYS.includes(k)) env[k] = v;
+  }
+  env.PATH = augmentPath(env.PATH);
+  return env;
+}
+
+/**
+ * Reduce a spawned headless process to an outcome: consume its newline-delimited
+ * stream-json on stdout, capture the session id / final result, accumulate stderr,
+ * and resolve on exit. Shared by the local `claude` spawn and the SSH executor —
+ * they differ only in how the process is created (local child vs `ssh` child).
+ */
+export function consumeHeadless(
+  proc: HeadlessProcessHandle,
+  onEvent?: (e: StreamEvent) => void,
+): HeadlessRunHandle {
+  let lastResult: StreamResult | null = null;
+  let sessionId: string | null = null;
+  let stderr = '';
+  let settled = false;
+
+  const parser = createStreamJsonParser((e) => {
+    if (e.kind === 'init' && e.sessionId) sessionId = e.sessionId;
+    if (e.kind === 'result') {
+      lastResult = e.result;
+      if (e.result.sessionId) sessionId = e.result.sessionId;
+    }
+    onEvent?.(e);
+  });
+
+  proc.stdout.setEncoding('utf-8');
+  proc.stdout.on('data', (chunk: string) => parser.push(chunk));
+  proc.stderr.setEncoding('utf-8');
+  proc.stderr.on('data', (chunk: string) => {
+    stderr += chunk;
+  });
+
+  const done = new Promise<HeadlessOutcome>((resolve) => {
+    proc.onExit((code, signal) => {
+      if (settled) return;
+      settled = true;
+      parser.flush();
+      resolve({ exitCode: code, signal: signal ?? null, result: lastResult, sessionId, stderr });
+    });
+  });
+
+  return { kill: () => proc.kill(), done };
+}
+
+function realSpawn(args: HeadlessSpawnArgs): HeadlessProcessHandle {
+  const argv = buildHeadlessArgs(args.goal, args.permissionMode, args.resumeSessionId, args.flags);
+  const child = spawn('claude', argv, {
+    cwd: args.cwd,
+    env: args.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  return {
+    stdout: child.stdout,
+    stderr: child.stderr,
+    kill: () => child.kill(),
+    onExit: (cb) => {
+      child.on('error', () => cb(null, null)); // e.g. ENOENT: claude not found
+      child.on('exit', (code, signal) => cb(code, signal));
+    },
+  };
+}
+
+export function runHeadlessClaude(options: HeadlessRunOptions): HeadlessRunHandle {
+  const permissionMode = options.permissionMode ?? 'bypassPermissions';
+  const spawnProcess = options.spawnProcess ?? realSpawn;
+  const env = cleanEnv();
+  if (options.pathPrepend) env.PATH = `${options.pathPrepend}:${env.PATH ?? ''}`;
+  if (options.extraEnv) Object.assign(env, options.extraEnv);
+  const proc = spawnProcess({
+    goal: options.goal,
+    cwd: options.cwd,
+    permissionMode,
+    env,
+    resumeSessionId: options.resumeSessionId,
+    flags: options.flags,
+  });
+  return consumeHeadless(proc, options.onEvent);
+}
+
+/** How long a capability probe may take before we assume "no support". */
+const PROBE_TIMEOUT_MS = 10_000;
+
+/**
+ * Read `claude --help` from the local CLI for capability detection. Resolves the
+ * help text, or rejects — callers route rejection to NO_FLAG_SUPPORT via the
+ * flag cache, so a missing/hanging `claude` degrades instead of throwing.
+ */
+export function probeLocalClaudeHelp(): Promise<string> {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn('claude', ['--help'], { env: cleanEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    let done = false;
+    const finish = (fn: () => void): void => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      fn();
+    };
+    const timer = setTimeout(() => {
+      finish(() => {
+        child.kill();
+        reject(new Error('claude --help timed out'));
+      });
+    }, PROBE_TIMEOUT_MS);
+    child.stdout.setEncoding('utf-8');
+    child.stdout.on('data', (c: string) => {
+      out += c;
+    });
+    child.on('error', (e) => finish(() => reject(e)));
+    child.on('exit', () => finish(() => resolvePromise(out)));
+  });
+}

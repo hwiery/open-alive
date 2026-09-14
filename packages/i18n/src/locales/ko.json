@@ -1,0 +1,1174 @@
+{
+  "header": {
+    "title": "open-alive",
+    "agentCount_one": "에이전트 {{count}}개",
+    "agentCount_other": "에이전트 {{count}}개",
+    "toggleLeftPanel": "왼쪽 패널 토글",
+    "toggleRightPanel": "오른쪽 패널 토글",
+    "toggleChat": "채팅 토글",
+    "openSettings": "설정",
+    "usageResetsIn": "{{time}} 후 초기화",
+    "usageStale": "마지막 확인 값"
+  },
+  "settings": {
+    "title": "설정",
+    "close": "닫기",
+    "done": "완료",
+    "reset": "기본값으로 초기화",
+    "resetTooltip": "모든 설정을 공장 초기값으로 복원",
+    "tabs": {
+      "sound": "사운드",
+      "terminal": "터미널",
+      "alerts": "알림",
+      "backend": "백엔드"
+    },
+    "sound": {
+      "completion": {
+        "title": "완료 사운드"
+      },
+      "error": {
+        "title": "에러 사운드"
+      },
+      "waiting": {
+        "title": "의사결정 요청 사운드"
+      },
+      "volume": "볼륨",
+      "test": "테스트"
+    },
+    "terminal": {
+      "theme": "컬러 테마",
+      "font": "글꼴",
+      "fontSize": "글자 크기",
+      "lineHeight": "줄 간격",
+      "letterSpacing": "자간",
+      "cursorStyle": "커서 모양",
+      "cursorBlock": "블록",
+      "cursorBar": "막대",
+      "cursorUnderline": "밑줄",
+      "cursorBlink": "커서 깜빡임",
+      "cursorWidth": "커서 굵기",
+      "paddingX": "좌우 여백",
+      "paddingY": "상하 여백",
+      "scrollback": "스크롤 버퍼",
+      "lines": "줄",
+      "customColors": "색상 직접 지정",
+      "colorRevert": "프리셋 색으로 되돌리기",
+      "colorResetAll": "모든 색을 프리셋으로 되돌리기",
+      "previewPrompt": "$ claude --version",
+      "colors": {
+        "background": "배경",
+        "foreground": "글자",
+        "cursor": "커서",
+        "black": "검정",
+        "red": "빨강",
+        "green": "초록",
+        "yellow": "노랑",
+        "blue": "파랑",
+        "magenta": "자홍",
+        "cyan": "청록",
+        "white": "흰색",
+        "brightBlack": "밝은 검정",
+        "brightRed": "밝은 빨강",
+        "brightGreen": "밝은 초록",
+        "brightYellow": "밝은 노랑",
+        "brightBlue": "밝은 파랑",
+        "brightMagenta": "밝은 자홍",
+        "brightCyan": "밝은 청록",
+        "brightWhite": "밝은 흰색"
+      }
+    },
+    "alerts": {
+      "cpu": {
+        "title": "CPU 사용량 알림"
+      },
+      "memory": {
+        "title": "메모리 사용량 알림"
+      },
+      "threshold": "임계값",
+      "sustain": "발동 전 지속 시간",
+      "seconds": "초",
+      "soundEnabled": "알림음 재생"
+    },
+    "backend": {
+      "checkOnStartup": "시작 시 연결 점검",
+      "checkOnStartupHint": "앱을 켤 때마다 저장된 백엔드 연결을 자동으로 확인합니다.",
+      "alertOnFailure": "연결 실패 시 알림",
+      "checkAll": "모두 확인"
+    }
+  },
+  "alert": {
+    "title": {
+      "cpu": "CPU 사용량 높음",
+      "memory": "메모리 사용량 높음",
+      "both": "시스템 부하 높음"
+    },
+    "message": "시스템 리소스 사용량이 설정한 임계값을 초과했습니다.",
+    "dismiss": "확인",
+    "backend": {
+      "title": "백엔드 연결 확인 필요",
+      "message": "일부 백엔드에 연결하지 못했습니다. 연결을 확인해 주세요.",
+      "recheck": "다시 확인"
+    }
+  },
+  "agents": {
+    "noAgentsYet": "아직 에이전트가 없습니다",
+    "startSession": "Claude Code 세션을 시작하면 자동으로 여기에 나타납니다.",
+    "projects": "프로젝트",
+    "subAgent": "서브 에이전트",
+    "agent": "에이전트",
+    "subAgents": "서브 에이전트",
+    "activeTotal": "{{active}}개 활성 / {{total}}개 전체",
+    "activeOnly": "{{active}}개 활성",
+    "agentCount_one": "에이전트 {{count}}개",
+    "agentCount_other": "에이전트 {{count}}개",
+    "activeSlash": "{{active}}개 활성 / ",
+    "hideInactive": "비활성 숨기기",
+    "inactiveCount": "+{{count}}개 비활성",
+    "clickToRename": "더블클릭하여 이름 변경",
+    "clickToRenameProject": "클릭하여 프로젝트 이름 변경",
+    "events": "이벤트",
+    "tools": "도구",
+    "startedAt": "시작 시간",
+    "totalEvents": "전체 이벤트 수",
+    "generalAgent": "일반 에이전트",
+    "externalShort": "외부",
+    "externalBadgeTitle": "이 앱이 아닌 다른 터미널에서 실행 중인 세션",
+    "resumeExternalHint": "외부 세션 — 클릭하면 여기서 재개합니다",
+    "sshError": "오류",
+    "sshSessions": "SSH 세션"
+  },
+  "states": {
+    "spawning": "생성 중",
+    "idle": "유휴",
+    "listening": "생각 중",
+    "active": "작업 중",
+    "waiting": "응답 필요",
+    "error": "오류",
+    "done": "완료",
+    "despawning": "종료 중",
+    "removed": "제거됨"
+  },
+  "notifications": {
+    "needsPermission": "권한 필요",
+    "errorOccurred": "오류 발생",
+    "taskCompleted": "작업 완료",
+    "toggle": "브라우저 알림 토글",
+    "enable": "브라우저 알림 켜기",
+    "disable": "브라우저 알림 끄기",
+    "denied": "알림 차단됨 — 브라우저 설정에서 허용하세요",
+    "unknownProject": "알 수 없는 프로젝트",
+    "folder": "폴더",
+    "agent": "에이전트",
+    "input": "입력",
+    "tool": "도구"
+  },
+  "activity": {
+    "title": "최근 활동",
+    "tools": "도구",
+    "prompts": "프롬프트",
+    "permissions": "권한",
+    "system": "시스템"
+  },
+  "eventStream": {
+    "title": "실시간 이벤트 스트림",
+    "waiting": "이벤트 대기 중...",
+    "unknownAgent": "알 수 없음"
+  },
+  "hookEvents": {
+    "SessionStart": "세션 시작",
+    "SessionEnd": "세션 종료",
+    "UserPromptSubmit": "사용자 입력",
+    "PreToolUse": "도구 실행",
+    "PostToolUse": "도구 완료",
+    "PostToolUseFailure": "도구 실패",
+    "PermissionRequest": "권한 요청",
+    "Stop": "정지",
+    "Notification": "알림",
+    "SubagentStart": "서브에이전트 시작",
+    "SubagentStop": "서브에이전트 종료",
+    "TeammateIdle": "팀원 대기",
+    "TaskCompleted": "작업 완료",
+    "ConfigChange": "설정 변경",
+    "PreCompact": "컨텍스트 압축",
+    "WorktreeCreate": "워크트리 생성",
+    "WorktreeRemove": "워크트리 제거"
+  },
+  "time": {
+    "justNow": "방금",
+    "secondsAgo": "{{count}}초 전",
+    "minutesAgo": "{{count}}분 전",
+    "hoursAgo": "{{count}}시간 전"
+  },
+  "completionLog": {
+    "title": "완료된 세션",
+    "empty": "아직 완료된 세션이 없습니다",
+    "sessionCompleted": "세션 완료",
+    "viewAll": "전체 보기 →",
+    "tokensShort": "tok"
+  },
+  "todo": {
+    "title": "할 일",
+    "placeholder": "메모 입력 후 Enter로 저장",
+    "empty": "아직 항목이 없습니다",
+    "remove": "제거",
+    "confirmRemove": "이 항목을 제거하시겠습니까?"
+  },
+  "efficio": {
+    "title": "Efficio — 크기보정 낭비",
+    "refresh": "새로고침",
+    "loading": "불러오는 중…",
+    "empty": "아직 efficio 데이터가 없습니다. 과거 세션을 채점하려면 수집기를 실행하세요:",
+    "noData": "범위 내 세션 없음",
+    "sessions": "세션 {{count}}개",
+    "lastUpdated": "마지막 수집",
+    "percentile": "낭비 백분위",
+    "axis": {
+      "w2": "컨텍스트 재무효화",
+      "wc": "편집 반복",
+      "bash": "Bash 시행착오",
+      "w3": "재탐색"
+    },
+    "status": {
+      "subj": "주관검증 (H1)",
+      "obj-weak": "객관 약상관",
+      "none": "미검증 (실험축)"
+    },
+    "view": {
+      "subtitle": "세션별 크기보정 낭비 신호 (0 토큰·결정론적)",
+      "caveat": "낭비는 2차원(MTMM): 체감(W2)·행동(WC/Bash) 축이 갈리며 때로 반대. 어느 게 '진짜 낭비'인지는 가치판단. 방향 타당성 미측정.",
+      "model": "기준모델 v{{version}}",
+      "last": "최근 {{count}}세션",
+      "tab": {
+        "sessions": "세션",
+        "scatter": "크기 vs 잔차",
+        "timeline": "다축 시계열",
+        "distribution": "분포",
+        "candidates": "개선 후보",
+        "reports": "리포트"
+      },
+      "scatterX": "세션 크기 (토큰)",
+      "scatterY": "잔차 (크기보정)",
+      "scatterHint": "회귀선 위 = 크기 예상보다 낭비 많음",
+      "distHint": "내 코퍼스에서 각 세션의 위치",
+      "actual": "실제",
+      "expected": "예상",
+      "residual": "잔차",
+      "turns": "{{count}}턴",
+      "tokens": "{{value}} tok",
+      "noSignal": "신호 없음",
+      "selectSession": "세션을 클릭하면 4축 상세",
+      "count": "세션 {{count}}개",
+      "candHint": "백분위(평가)가 아니라 실제로 반복한 명령/파일입니다. 여러 세션에 걸쳐 반복될수록 CLAUDE.md 규칙 후보 가치가 큽니다.",
+      "candBash": "반복된 Bash 명령",
+      "candEdits": "반복 편집한 파일",
+      "candNone": "범위 내 반복 없음",
+      "candSessions": "{{count}}개 세션",
+      "candAcross": "{{sessions}}개 세션에서 총 {{total}}회 반복",
+      "repeats": "이 세션의 반복"
+    },
+    "cluster": {
+      "perceived": "체감",
+      "behavioral": "행동"
+    },
+    "report": {
+      "noData": "범위 내 데이터 없음",
+      "nSessions": "{{count}}개 세션",
+      "trendTitle": "추세",
+      "trendDesc": "최근 세션들의 낭비 백분위 선형 추세(선택 축 기준). 상승은 악화를 뜻함.",
+      "trendRising": "상승 +{{slope}}/세션",
+      "trendFalling": "하락 -{{slope}}/세션",
+      "trendFlat": "평탄",
+      "trendAlert": "악화 중",
+      "projectTitle": "프로젝트별",
+      "projectDesc": "프로젝트별 평균 낭비 백분위 — 크기 대비 어느 프로젝트가 비효율적인지.",
+      "cacheTitle": "캐시 효율",
+      "cacheDesc": "캐시 재사용 = read / (read + creation). 높을수록 컨텍스트를 재무효화 않고 재사용.",
+      "cacheReuse": "read {{read}} · 생성 {{creation}} ({{count}}개 세션)",
+      "weeklyTitle": "주간 요약",
+      "weeklyDesc": "주별 평균 낭비와 해당 주 낭비 상위 세션.",
+      "weekAvg": "평균 {{pct}}%"
+    }
+  },
+  "pixelOffice": {
+    "title": "픽셀 오피스"
+  },
+  "error": {
+    "somethingWentWrong": "문제가 발생했습니다. 자세한 내용은 브라우저 콘솔을 확인하세요.",
+    "retry": "재시도"
+  },
+  "pixelStates": {
+    "active": "작업 중",
+    "idle": "대기",
+    "listening": "수신 중",
+    "spawning": "생성 중",
+    "waiting": "대기 중...",
+    "error": "오류!",
+    "done": "완료",
+    "despawning": "종료 중",
+    "removed": "제거됨"
+  },
+  "stats": {
+    "title": "에이전트 통계",
+    "active": "활성",
+    "total": "전체",
+    "subagentTypes": "서브에이전트 유형",
+    "topTools": "주요 도구",
+    "calls": "호출",
+    "noData": "아직 활동 없음"
+  },
+  "tokens": {
+    "title": "토큰 사용량",
+    "input": "입력",
+    "output": "출력",
+    "cacheCreation": "캐시 쓰기",
+    "cacheRead": "캐시 읽기",
+    "total": "합계",
+    "apiCalls": "API 호출",
+    "model": "모델"
+  },
+  "terminal": {
+    "newTab": "새 탭",
+    "newChat": "새 채팅",
+    "resumingSession": "세션 재개 중…",
+    "parentDir": "상위 폴더",
+    "tabLabel": "터미널 {{n}}",
+    "exited": "종료됨",
+    "status": {
+      "waiting": "대기중"
+    },
+    "selectWorkingDir": "작업 디렉토리 선택",
+    "customPathPlaceholder": "~/path/to/project",
+    "customPathHint": "경로를 입력하고 Enter를 누르거나, 위의 프로젝트를 선택하세요",
+    "skipPermissions": "권한 건너뛰기 (--dangerously-skip-permissions)",
+    "skipPermissionsWarning": "Claude가 권한 요청 없이 모든 도구를 실행합니다.",
+    "modePopup": "팝업",
+    "modeBottom": "하단",
+    "modeRight": "우측",
+    "modeFullscreen": "전체화면",
+    "modeFullscreenDisabled": "프롬프트/Efficio 뷰에서는 전체화면을 쓸 수 없습니다",
+    "selectHere": "선택",
+    "tabLocal": "로컬 폴더",
+    "tabSsh": "SSH 원격",
+    "quickSelect": "빠른 선택",
+    "browseSection": "탐색",
+    "startHere": "이 폴더에서 시작",
+    "variantClaudeHint": "표준 `claude` CLI 실행",
+    "variantAgentsHint": "`claude agents` 실행",
+    "emptyDir": "하위 폴더 없음",
+    "collapse": "최소화",
+    "closeDialog": "닫기",
+    "doubleClickRename": "더블클릭하여 이름 변경",
+    "closeConfirm": {
+      "title": "터미널 닫기",
+      "message": "이 터미널 세션을 닫으시겠습니까? 실행 중인 작업이 종료됩니다.",
+      "confirm": "닫기",
+      "cancel": "취소"
+    },
+    "reorderTab": "탭 순서 변경",
+    "menu": {
+      "localFolder": "로컬 폴더 열기…",
+      "sshPresets": "SSH 프리셋",
+      "manageSsh": "새 SSH 프리셋…",
+      "recentFolders": "최근 폴더",
+      "noRecentFolders": "최근 선택한 폴더 없음",
+      "noSshPresets": "SSH 프리셋이 없습니다 — 아래에서 추가하세요",
+      "removeRecentFolder": "최근 폴더에서 제거"
+    },
+    "ssh": {
+      "dialogTitle": "SSH 연결 프리셋",
+      "newTitle": "새 프리셋",
+      "editTitle": "프리셋 수정",
+      "modeFreeform": "명령어",
+      "modeStructured": "호스트",
+      "labelField": "이름",
+      "labelPlaceholder": "Studio 서버",
+      "commandField": "SSH 명령어",
+      "commandHint": "예: `ssh studio` — ~/.ssh/config, 키, agent를 그대로 사용",
+      "host": "호스트",
+      "port": "포트",
+      "user": "사용자",
+      "identityFile": "인증 키 파일",
+      "structuredHint": "호스트를 입력하면 명령어가 자동 생성됩니다",
+      "autoRun": "탭이 열리면 명령어를 자동 실행",
+      "securityNote": "비밀번호는 절대 저장되지 않습니다. 터미널에 직접 입력하거나, 키 기반 인증 / ssh-agent를 사용하세요.",
+      "savePreset": "프리셋 저장",
+      "saveChanges": "변경사항 저장",
+      "cancelEdit": "취소",
+      "connect": "연결",
+      "edit": "수정",
+      "delete": "삭제",
+      "confirmDelete": "프리셋 “{{label}}”을(를) 삭제할까요?"
+    },
+    "sshError": {
+      "permission-denied": "SSH: 인증 실패 — 키 또는 비밀번호를 확인하세요",
+      "connection-refused": "SSH: 연결 거부 — 호스트가 꺼져 있거나 포트가 닫혀 있습니다",
+      "dns": "SSH: 호스트를 찾을 수 없음 — 호스트명을 확인하세요",
+      "timeout": "SSH: 연결 시간 초과 — 네트워크 또는 방화벽을 확인하세요",
+      "host-key": "SSH: 호스트 키 검증 실패",
+      "host-key-changed": "SSH: 원격 호스트 ID 변경 감지 — 중간자 공격 가능성",
+      "unknown": "SSH: 연결 실패"
+    },
+    "resumeConfirm": {
+      "title": "이 세션을 재개할까요?",
+      "message": "이 세션이 다른 터미널에서 아직 실행 중일 수 있습니다. 재개하면 같은 트랜스크립트에 동시에 기록하는 사본이 하나 더 열려 기록이 손상될 수 있습니다. 원본이 더 이상 실행 중이 아님이 확실할 때만 계속하세요.",
+      "cancel": "취소",
+      "confirm": "그래도 재개"
+    }
+  },
+  "chat": {
+    "title": "Chat",
+    "placeholder": "메시지를 입력하세요...",
+    "send": "보내기",
+    "you": "나",
+    "agent": "에이전트"
+  },
+  "viewMode": {
+    "label": "뷰 모드",
+    "groupMonitor": "모니터링",
+    "groupTools": "도구",
+    "animation": "애니메이션",
+    "list": "리스트",
+    "prompt": "프롬프트",
+    "efficio": "Efficio",
+    "tickets": "티켓",
+    "spread": "스프레드",
+    "jarvis": "자비스",
+    "workspace": "워크스페이스",
+    "board": "보드",
+    "data": "데이터",
+    "archive": "세션 관리",
+    "ticketMgmt": "티켓 관리",
+    "backends": "백엔드 연결"
+  },
+  "board": {
+    "tab": {
+      "work": "작업",
+      "cost": "비용"
+    },
+    "subtab": {
+      "outcome": "성과",
+      "quality": "품질",
+      "efficiency": "효율",
+      "process": "과정"
+    },
+    "empty": {
+      "noSession": "연결된 세션 없음",
+      "noData": "데이터 없음",
+      "pickTicket": "티켓을 선택하세요"
+    },
+    "pickRun": "사이드바에서 런을 선택하세요"
+  },
+  "data": {
+    "title": "LLM 사용량 데이터",
+    "subtitle": "Claude Code 트랜스크립트 기반 토큰 사용량·모델별 사용량·콜 횟수·비용을 한눈에 (ccusage 방식).",
+    "refresh": "새로고침",
+    "refreshing": "불러오는 중…",
+    "filter": {
+      "title": "기간 필터",
+      "from": "시작일",
+      "to": "종료일",
+      "preset": {
+        "all": "전체",
+        "last7": "최근 7일",
+        "last30": "최근 30일",
+        "thisMonth": "이번 달"
+      },
+      "reset": "필터 초기화",
+      "scoped": "선택 기간 기준",
+      "rangeDays": "선택 기간 합계 ({{count}}일)",
+      "dailyAvg": "일 평균",
+      "empty": "선택한 기간에 사용량 데이터가 없습니다.",
+      "invalid": "시작일이 종료일보다 뒤입니다. 기간을 다시 선택하세요."
+    },
+    "unreachable": {
+      "title": "서버에 연결할 수 없음",
+      "body": "사용량 데이터를 불러오기 위해 서버에 연결하지 못했습니다."
+    },
+    "empty": {
+      "title": "아직 사용량 데이터가 없습니다",
+      "body": "Claude Code를 사용하면 토큰·모델 사용량이 여기에 표시됩니다."
+    },
+    "stat": {
+      "totalTokens": "총 토큰",
+      "totalCost": "총 비용",
+      "totalCalls": "총 콜 수",
+      "models": "모델 수",
+      "ticketsOnly": "티켓·위임 기준",
+      "ccusageBased": "트랜스크립트 기준 (ccusage)",
+      "distinct": "고유 모델",
+      "records": "레코드 {{count}}개",
+      "today": "오늘",
+      "thisWeek": "이번 주",
+      "thisMonth": "이번 달"
+    },
+    "period": {
+      "day": "일",
+      "week": "주",
+      "month": "월"
+    },
+    "chart": {
+      "tokensByPeriod": "기간별 토큰 사용량",
+      "empty": "해당 기간의 데이터가 없습니다."
+    },
+    "table": {
+      "title": "모델별",
+      "model": "모델",
+      "input": "입력",
+      "output": "출력",
+      "cache": "캐시",
+      "total": "합계",
+      "cost": "비용",
+      "calls": "콜",
+      "share": "점유율"
+    },
+    "footnote": "Claude Code 트랜스크립트(~/.claude/projects)를 메시지 단위로 dedup 후 모델별 단가로 산출 — ccusage와 동일 방식. 콜 = 어시스턴트 메시지 수."
+  },
+  "backends": {
+    "title": "백엔드 연결",
+    "subtitle": "오케스트레이터(Claude)와 위임 대상 서브에이전트를 연결하고 상태를 확인합니다.",
+    "loading": "불러오는 중…",
+    "check": "연결 확인",
+    "checking": "확인 중…",
+    "connected": "연결됨",
+    "failed": "실패",
+    "unknown": "미확인",
+    "kind": {
+      "orchestrator": "오케스트레이터",
+      "subagent": "서브에이전트",
+      "location": "위치"
+    },
+    "sshHosts": "SSH 호스트",
+    "sshHostsHint": "여기서 호스트를 등록하면 티켓 생성 시 '위치'로 선택할 수 있습니다 (원격에서 실행). 원격 호스트에 claude 설치·인증 필요.",
+    "sshLabel": "이름(선택)",
+    "sshHost": "호스트 (예: 192.168.100.99)",
+    "sshUser": "사용자 (예: dev)",
+    "sshAdd": "호스트 추가",
+    "remove": "삭제"
+  },
+  "tickets": {
+    "heroPrompt": "What do you want to solve?",
+    "newGoalPlaceholder": "목표를 적으세요 — 에이전트가 자율로 처리합니다",
+    "selectFolder": "프로젝트 폴더 선택",
+    "changeFolder": "변경",
+    "location": "실행 위치",
+    "locationLocal": "로컬",
+    "remotePickerTitle": "원격 폴더 선택",
+    "remotePathPlaceholder": "원격 경로, 예: /home/dev/project",
+    "pickerTitle": "프로젝트 폴더 선택",
+    "useThisFolder": "이 폴더로 지정",
+    "create": "Solve",
+    "creating": "생성 중…",
+    "empty": "없음",
+    "clearClosed": "정리",
+    "clearClosedConfirm": "종료된 티켓 {{count}}건을 모두 삭제할까요?",
+    "retry": "재시도",
+    "cancel": "취소",
+    "delete": "삭제",
+    "detail": "자세히",
+    "intervene": "과정 보기",
+    "evaluateLabel": "평가",
+    "evalGood": "좋음",
+    "evalBad": "나쁨",
+    "evalVeryGood": "매우좋음",
+    "evalVeryBad": "매우나쁨",
+    "evalNeutral": "보통",
+    "evalWeight": "가중치",
+    "evalNotePlaceholder": "메모 (선택) — 왜 좋음/나쁨인지",
+    "evalSaved": "저장됨",
+    "evalAuto": "자동",
+    "close": "닫기",
+    "goalLabel": "요청 내용",
+    "headlineLabel": "한줄 답변",
+    "resultLabel": "전체 결과",
+    "verificationLabel": "검증",
+    "failureLabel": "실패 사유",
+    "noResult": "결과 없음",
+    "orchestrate": "오케스트레이터로 실행",
+    "orchestrateHint": "(서브에이전트에 위임 가능)",
+    "presetLabel": "실행 프로필",
+    "preset": {
+      "fast": "빠름",
+      "medium": "중간",
+      "standard": "기본",
+      "deep": "심층",
+      "expert": "전문",
+      "ultimate": "최상"
+    },
+    "runPreset": "실행 프로필",
+    "runRequestedModel": "요청 모델",
+    "runFlagsDropped": "대상 CLI 미지원",
+    "evaluatePrompt": "평가:",
+    "runInfoLabel": "실행 정보",
+    "delegationsLabel": "위임 내역 (서브 에이전트)",
+    "runModel": "모델",
+    "runEffort": "Effort",
+    "runThinking": "확장 사고",
+    "runSessionId": "세션 ID",
+    "runInput": "입력 토큰",
+    "runOutput": "출력 토큰",
+    "runCacheRead": "캐시 읽기",
+    "runCacheCreate": "캐시 생성",
+    "runTotal": "합계 토큰",
+    "runCost": "비용",
+    "runTurns": "턴",
+    "runDuration": "소요 시간",
+    "runRounds": "라운드",
+    "decisionLabel": "의사결정 필요",
+    "decisionPending": "결정을 기다리는 중",
+    "decisionAnswer": "답변이나 결정을 입력하세요…",
+    "decisionPickHint": "옵션을 클릭하면 답변란에 채워집니다. 수정 후 보내기를 누르세요.",
+    "answerCta": "답변하기",
+    "threadLabel": "대화",
+    "threadUser": "나",
+    "threadAgent": "에이전트",
+    "threadDecision": "결정 필요",
+    "send": "보내기",
+    "sending": "보내는 중…",
+    "columns": {
+      "active": "진행중",
+      "decision": "의사결정",
+      "complete": "완료",
+      "closed": "종료",
+      "done": "종료",
+      "failed": "실패"
+    },
+    "status": {
+      "queued": "대기중",
+      "running": "실행중",
+      "verifying": "검증중",
+      "decision": "의사결정 대기",
+      "done": "종료",
+      "failed": "실패"
+    },
+    "failureReason": {
+      "error": "에이전트 오류",
+      "verification-failed": "검증 불통과",
+      "verification-inconclusive": "검증 불확실",
+      "timeout": "시간 초과",
+      "cancelled": "취소됨",
+      "interrupted": "중단됨 (서버 재시작)",
+      "cwd-not-allowed": "허용되지 않은 작업 디렉터리",
+      "usage-limit": "사용량 한도 도달",
+      "model-unavailable": "모델 사용 불가"
+    },
+    "agentExit": {
+      "cause": {
+        "terminated": "외부에서 종료 요청을 받음 (SIGTERM)",
+        "interrupted": "인터럽트로 중단됨 (SIGINT)",
+        "hangup": "부모 프로세스가 사라짐 (SIGHUP)",
+        "killed": "강제 종료됨 (SIGKILL)",
+        "spawn-failed": "에이전트가 시작조차 못 함",
+        "exited": "에이전트가 오류로 종료함",
+        "no-result": "결과 없이 끝남"
+      },
+      "meaning": {
+        "terminated": "에이전트가 죽은 게 아니다. 바깥에서 종료를 요청했고 에이전트는 실행 도중 스스로 정리하고 내려갔다. 그때까지의 작업은 이미 수행됐고 토큰도 소모됐다. 작업 품질에 대한 판정이 아니다.",
+        "interrupted": "터미널의 Ctrl-C 또는 부모 셸의 인터럽트가 에이전트 프로세스에 전달돼 중단됐다.",
+        "hangup": "에이전트가 붙어 있던 터미널이나 부모 프로세스가 사라져 OS가 연결을 끊었다.",
+        "killed": "정리할 기회 없이 즉시 종료됐다. macOS에서는 대부분 메모리 압박이거나 명시적인 kill -9 이다.",
+        "spawn-failed": "프로세스가 아예 실행되지 않아 종료 코드 자체가 없다. 에이전트가 아니라 실행 환경 문제다.",
+        "exited": "프로세스는 실행됐고 스스로 0이 아닌 코드로 종료했다. 이유는 대개 아래 오류 출력에 있다.",
+        "no-result": "프로세스는 정상 종료했지만 최종 답변을 스트리밍하지 않아 검증할 대상이 없었다."
+      },
+      "suspectsLabel": "짚어볼 곳",
+      "suspect": {
+        "cancel": "이 티켓에 대한 취소 요청 (대시보드 또는 폰 앱)",
+        "serverStop": "open-alive 서버 종료 또는 재시작",
+        "otherTool": "같은 머신의 다른 도구·스크립트가 프로세스를 정리",
+        "manualKill": "사람이 직접 kill <pid> 실행",
+        "ctrlC": "서버를 띄운 터미널에서 Ctrl-C",
+        "processGroup": "서버 프로세스 그룹 전체에 전달된 인터럽트",
+        "terminalClosed": "서버를 띄운 터미널이 닫힘",
+        "sshDropped": "실행을 나르던 SSH 세션이 끊김",
+        "memoryPressure": "OS 메모리 압박 (jetsam / OOM)",
+        "kill9": "명시적인 kill -9",
+        "supervisor": "컨테이너·감시 프로세스의 강제 종료",
+        "notOnPath": "서버 PATH에서 `claude` 실행 파일을 찾지 못함",
+        "cwdUnreadable": "작업 디렉터리가 없거나 읽을 수 없음",
+        "sshUnreachable": "원격 실행인 경우 SSH 호스트에 연결 실패",
+        "usageError": "잘못된 CLI 플래그나 인자",
+        "authOrQuota": "인증 만료 또는 사용량 한도",
+        "agentError": "에이전트 내부 오류 — 아래 오류 출력을 확인",
+        "maxTurns": "최대 턴 수에 도달",
+        "streamCutOff": "결과 이벤트 전에 출력 스트림이 끊김"
+      },
+      "nextLabel": "다음:",
+      "next": {
+        "terminated": "재시도하면 된다. 작업 자체가 실패한 게 아니다.",
+        "interrupted": "인터럽트가 에이전트까지 닿지 않도록 서버를 분리 실행한 뒤 재시도한다.",
+        "hangup": "서버를 백그라운드로 띄우고 (open-alive start) 재시도한다.",
+        "killed": "메모리 사용량을 확인하고 동시에 도는 티켓 수를 줄인 뒤 재시도한다.",
+        "spawn-failed": "먼저 환경을 고친다. 서버가 `claude` 를 찾을 수 있는지, 작업 디렉터리에 접근되는지 확인한다.",
+        "exited": "재시도 전에 아래 오류 출력을 먼저 읽는다.",
+        "no-result": "목표를 좁히거나 회차를 나눈 뒤 재시도한다."
+      },
+      "resumeHint": "Claude 세션이 기록돼 있어 `claude --resume <세션 id>` 로 대화를 이어갈 수 있다 (아래 실행 정보 참고).",
+      "fieldCode": "종료 코드",
+      "fieldSignal": "시그널",
+      "fieldRanFor": "실행 시간",
+      "fieldRound": "회차",
+      "fieldSubtype": "결과 subtype",
+      "fieldResumable": "이어하기",
+      "resumableYes": "가능 — 세션 기록됨",
+      "resumableNo": "불가 — 세션이 기록되지 않음",
+      "inferred": "종료 코드에서 추정",
+      "stderrLabel": "오류 출력"
+    },
+    "startedAt": "시작",
+    "reviewCta": "검토",
+    "verificationReportLabel": "검증 리포트",
+    "advisoryLabel": "자문 패널",
+    "verdictLabel": "판정",
+    "gateLabel": "게이트(Claude)",
+    "consensusLabel": "합의",
+    "abstainedLabel": "무응답",
+    "commitLabel": "커밋",
+    "commitSkipped": "커밋 안 함",
+    "filesLabel": "개 파일",
+    "resolutionLabel": "채택",
+    "tiebreakLabel": "동일성 판정",
+    "flaggedLabel": "이견 있음",
+    "gapLabel": "약한 지점:",
+    "coverageLabel": "목표 커버리지:",
+    "escalationLabel": "에스컬레이션",
+    "reviewPhase": {
+      "unverified": "검증 전",
+      "verifying": "검증 중",
+      "verified": "검증 완료",
+      "verifyFailed": "검증 실패",
+      "decisionPending": "의사결정 전",
+      "decisionRunning": "의사결정 중",
+      "decisionDone": "의사결정 완료",
+      "decisionFailed": "의사결정 실패",
+      "failed": "실패"
+    },
+    "decisionStage": {
+      "pending": "의사결정 전",
+      "deciding": "의사결정 중",
+      "decided": "의사결정 완료",
+      "failed": "의사결정 실패"
+    },
+    "autoCommit": "검증 통과 시 커밋",
+    "autoCommitHint": "게이트 통과 후 로컬 커밋만 합니다. push는 하지 않습니다.",
+    "autoCommitRemoteHint": "원격 티켓 — 에이전트가 원격 호스트에서 커밋합니다. push는 하지 않습니다.",
+    "panelReview": "타 모델 교차검증",
+    "panelReviewHint": "목표와 결과를 외부 모델에 전송합니다. 끄면 로컬 게이트만 사용합니다.",
+    "panelOffLabel": "패널 미사용 — 로컬 게이트 단독",
+    "runsOn": "{{target}} 에서 SSH로 실행",
+    "createFailed": "티켓을 만들지 못했습니다 (HTTP {{status}})",
+    "createNetworkError": "서버에 연결할 수 없습니다 — 서버가 실행 중인가요?"
+  },
+  "spread": {
+    "empty": "열린 터미널이 없습니다",
+    "emptyHint": "챗을 열면 여기에 표시됩니다",
+    "tileHint": "타일을 클릭하면 그 자리에서 입력할 수 있습니다. 더블클릭 또는 ⤢로 최대화",
+    "hint": {
+      "focus": "포커스",
+      "swap": "이동",
+      "resize": "크기",
+      "maximize": "최대화"
+    },
+    "shortcut": {
+      "focusLeft": "왼쪽 포커스",
+      "focusRight": "오른쪽 포커스",
+      "focusUp": "위쪽 포커스",
+      "focusDown": "아래쪽 포커스",
+      "swapLeft": "타일 왼쪽 이동",
+      "swapRight": "타일 오른쪽 이동",
+      "swapUp": "타일 위로 이동",
+      "swapDown": "타일 아래로 이동",
+      "shrinkWidth": "폭 줄이기",
+      "growWidth": "폭 늘리기",
+      "shrinkHeight": "높이 줄이기",
+      "growHeight": "높이 늘리기",
+      "maximize": "최대화",
+      "resetLayout": "레이아웃 초기화"
+    }
+  },
+  "prompt": {
+    "listTitle": "최근 프롬프트",
+    "empty": "아직 캡처된 프롬프트가 없습니다. 훅이 설치된 상태에서 Claude Code를 사용하면 여기에 나타납니다.",
+    "loading": "불러오는 중…",
+    "unreachable": {
+      "title": "프롬프트 데이터를 불러올 수 없습니다",
+      "body": "open-alive 서버에 연결할 수 없거나 프롬프트 API가 응답하지 않습니다. 서버가 실행 중인지 확인하고 다시 시도해 주세요."
+    },
+    "subtab": {
+      "dashboard": "대시보드",
+      "prompts": "프롬프트"
+    },
+    "dashboard": {
+      "totalPrompts": "전체 프롬프트",
+      "avgScore": "평균 점수",
+      "avgScoreHint": "0–100 스케일",
+      "goodRatio": "GOOD 비율",
+      "activeDays": "활동 일수 (30일)",
+      "scoreTrend": "점수 추이 (최근 30일)",
+      "legendScore": "평균 점수 (0–100)",
+      "legendCount": "프롬프트 횟수",
+      "tierDistribution": "Tier 분포",
+      "topImprovements": "자주 발생하는 개선사항",
+      "topImprovementsEmpty": "아직 룰 hit이 없습니다.",
+      "recentCards": "최근 프롬프트"
+    },
+    "detail": {
+      "empty": "왼쪽에서 프롬프트를 선택하면 개선사항과 코칭 힌트를 볼 수 있습니다.",
+      "notFound": "프롬프트를 찾을 수 없습니다.",
+      "promptHeader": "프롬프트",
+      "improvementsHeader": "개선사항",
+      "improvementsEmpty": "개선사항 없음 — 좋은 프롬프트입니다.",
+      "hitsHeader_one": "룰 hit 1건",
+      "hitsHeader_other": "룰 hit {{count}}건",
+      "hitsEmpty": "룰 hit 없음 — 깔끔합니다.",
+      "coachHeader": "Claude에게 주입된 코칭 힌트",
+      "efficiencyShort": "효율",
+      "baselineDelta": "내 평균 대비 {{delta}}"
+    },
+    "confidence": {
+      "high": "확실",
+      "medium": "추정",
+      "low": "참고용"
+    }
+  },
+  "listView": {
+    "title": "에이전트",
+    "col": {
+      "name": "에이전트",
+      "state": "상태",
+      "tool": "도구",
+      "project": "프로젝트",
+      "events": "이벤트",
+      "lastEvent": "최근 이벤트"
+    }
+  },
+  "bubble": {
+    "readingTool": "{{tool}} 읽는 중...",
+    "reading": "읽는 중...",
+    "searching": "파일 찾는 중...",
+    "runningBash": "명령어 실행 중...",
+    "runningTest": "테스트 돌리는 중...",
+    "thinking": "음... 생각 중...",
+    "typing": "열심히 코드 작성 중...",
+    "waiting": "허락 기다리는 중~",
+    "error": "뭔가 잘못됐다...!",
+    "listening": "듣고 있어요!",
+    "done": "작업 끝! 수고하셨습니다~",
+    "idle": "작업완료 후 대기중"
+  },
+  "dashboard": {
+    "title": "세션",
+    "subtitle": "실행 중이거나 재개 가능한 Claude 세션. 카드를 클릭해 열기·포커스·재개하세요.",
+    "empty": "아직 세션이 없습니다. 사이드바에서 새 채팅을 시작하세요.",
+    "section": {
+      "live": "실행 중 · {{n}}",
+      "dormant": "재개 가능 · {{n}}"
+    },
+    "action": {
+      "focus": "열기",
+      "resume": "재개"
+    },
+    "time": {
+      "now": "방금",
+      "minutesAgo": "{{n}}분 전",
+      "hoursAgo": "{{n}}시간 전",
+      "daysAgo": "{{n}}일 전"
+    }
+  },
+  "workspaceTree": {
+    "loading": "워크스페이스를 불러오는 중…",
+    "empty": "아직 기록된 세션이 없습니다.",
+    "unavailable": "canonical 이벤트 로그를 읽을 수 없습니다.",
+    "unavailableHint": "세션은 계속 실행 중이며 이 화면만 읽지 못합니다. 서버 로그를 확인하세요.",
+    "error": "워크스페이스 트리를 불러오지 못했습니다.",
+    "sessionCount": "세션 {{count}}개",
+    "pendingApprovals": "승인 대기 {{count}}건",
+    "gitRepo": "git",
+    "folder": "폴더",
+    "heuristic": "추정",
+    "heuristicHint": "공급자가 직접 보고한 상태가 아니라 추론된 값입니다.",
+    "headerTitle": "개입 제어탑",
+    "headerSubtitle": "머신·저장소별로 지금 무엇이 돌고 있고 어디에 답해야 하는지",
+    "pendingTotal": "{{count}}건 응답 대기",
+    "pendingNone": "응답 대기 없음",
+    "showPendingOnly": "대기만 보기",
+    "showAll": "전체 보기",
+    "allClear": "응답 대기 중인 세션이 없습니다.",
+    "allClearHint": "전체 보기로 돌아가면 모든 세션이 표시됩니다.",
+    "lastActiveTitle": "마지막 활동",
+    "lastActiveNow": "방금",
+    "lastActiveMin": "{{count}}분 전",
+    "lastActiveHour": "{{count}}시간 전",
+    "lastActiveDay": "{{count}}일 전"
+  },
+  "conversation": {
+    "selectPrompt": "대화를 보려면 세션을 선택하세요.",
+    "loading": "대화를 불러오는 중…",
+    "empty": "이 세션에 기록된 대화가 없습니다.",
+    "notFound": "이 세션은 카탈로그에 없습니다.",
+    "unavailable": "canonical 이벤트 로그를 읽을 수 없어 대화를 표시할 수 없습니다.",
+    "error": "대화를 불러오지 못했습니다.",
+    "partialNotice": "훅에서 파생된 이력입니다. 턴당 assistant 메시지 1건만 포함되며 전체 응답은 아닙니다.",
+    "tool": "도구",
+    "approval": "승인 요청",
+    "systemEvent": "시스템",
+    "role": {
+      "user": "나",
+      "assistant": "어시스턴트",
+      "reasoning": "추론"
+    },
+    "status": {
+      "running": "실행 중",
+      "completed": "완료",
+      "failed": "실패"
+    },
+    "decision": {
+      "allow": "허용됨",
+      "deny": "거부됨"
+    }
+  },
+  "sessionDetail": {
+    "tab": {
+      "conversation": "대화",
+      "terminal": "터미널"
+    },
+    "terminalLoading": "터미널을 확인하는 중…",
+    "terminalError": "이 세션의 터미널을 확인하지 못했습니다.",
+    "noTerminal": "이 세션에 Alive가 소유한 터미널이 없습니다.",
+    "terminalLive": "이 세션의 터미널이 실행 중입니다.",
+    "terminalExited": "이 세션의 터미널은 종료되었습니다.",
+    "terminalTab": "터미널 탭: {{tabId}}",
+    "terminalHint": "원문 출력을 조작하려면 Chat 화면에서 여세요.",
+    "reason": {
+      "unknown-session": "이 세션은 카탈로그에 없습니다.",
+      "not-spawned-by-alive": "Alive 외부에서 시작된 세션이라 붙을 프로세스가 없습니다. 대화 이력은 훅에서 계속 읽을 수 있습니다.",
+      "lookup-failed": "터미널 레지스트리를 읽지 못했습니다. 서버 로그를 확인하세요."
+    }
+  },
+  "ticketMgmt": {
+    "listTitle": "프로젝트별",
+    "searchPlaceholder": "목표·요약·프로젝트로 검색",
+    "loading": "불러오는 중…",
+    "empty": "아직 티켓 기록이 없습니다",
+    "unreachable": {
+      "title": "티켓 관리를 불러올 수 없습니다",
+      "body": "티켓 기록을 불러오기 위해 서버에 연결하지 못했습니다. 이 화면은 로컬 대시보드에서만 사용할 수 있습니다."
+    },
+    "reflected": "반영됨",
+    "pending": "보류",
+    "stat": {
+      "total": "전체",
+      "good": "good",
+      "bad": "bad",
+      "reflected": "반영"
+    },
+    "detail": {
+      "empty": "티켓을 선택하면 결과와 점수를 해부할 수 있습니다.",
+      "goal": "요청",
+      "result": "결과",
+      "noResult": "결과 스냅샷 없음 (이전 레코드).",
+      "verdict": "검증",
+      "verdictPassed": "통과",
+      "verdictFailed": "실패",
+      "model": "모델",
+      "effort": "Effort",
+      "thinking": "Thinking",
+      "completedAt": "완료 시각"
+    },
+    "score": {
+      "title": "점수",
+      "good": "Good",
+      "bad": "Bad",
+      "unrated": "미평가",
+      "weight": "가중치",
+      "notePlaceholder": "메모(선택) — 이유",
+      "auto": "자동",
+      "save": "저장",
+      "saved": "저장됨"
+    },
+    "reflect": {
+      "title": "편향 반영",
+      "on": "편향에 반영됨",
+      "off": "편향에 반영",
+      "hint": "반영된 티켓만 이 프로젝트의 주입 가이드를 형성합니다."
+    },
+    "guide": {
+      "title": "현재 편향 (주입되는 가이드)",
+      "empty": "이 프로젝트에 아직 편향으로 반영된 티켓이 없습니다.",
+      "counts": "good {{good}} · bad {{bad}} 반영됨"
+    },
+    "viewSession": "세션에서 과정 보기",
+    "noSession": "연결된 세션 없음"
+  },
+  "archive": {
+    "listTitle": "완료된 티켓",
+    "searchPlaceholder": "프로젝트·이름·프롬프트로 검색",
+    "loading": "불러오는 중…",
+    "empty": "아직 완료된 세션이 없습니다",
+    "tokensShort": "tok",
+    "bucket": {
+      "today": "오늘",
+      "yesterday": "어제",
+      "week": "이번 주",
+      "earlier": "이전"
+    },
+    "unreachable": {
+      "title": "아카이브를 불러올 수 없습니다",
+      "body": "완료 세션 아카이브를 불러오기 위해 서버에 연결하지 못했습니다."
+    },
+    "detail": {
+      "empty": "완료된 세션을 선택하면 상세 내용을 볼 수 있습니다.",
+      "completedAt": "완료 시각",
+      "startedAt": "시작 시각",
+      "duration": "소요 시간",
+      "events": "이벤트",
+      "toolCalls": "도구 호출",
+      "project": "프로젝트",
+      "session": "세션 ID",
+      "tools": "사용 도구",
+      "tokens": "토큰 사용량",
+      "lastPrompt": "마지막 프롬프트"
+    }
+  },
+  "sidebar": {
+    "title": "레포지토리",
+    "openSummary": "미종결 {{count}}건",
+    "oldest": "가장 오래된 것 {{age}}",
+    "showClosed": "완료 {{count}}개",
+    "newRun": "새 런",
+    "noRepos": "아직 레포지토리가 없습니다",
+    "detached": "detached",
+    "allRepos": "전체 프로젝트",
+    "allReposHint": "필터 없음",
+    "filteredBanner": "{{name}} 만 보는 중",
+    "clearFilter": "전체 보기",
+    "collapse": "{{name}} 접기",
+    "expand": "{{name}} 펼치기",
+    "lastActivity": "{{age}} 전",
+    "noActivity": "활동 없음",
+    "stateRunning": "실행중",
+    "stateWaiting": "미정리",
+    "stateClosed": "종료",
+    "stateAbandoned": "폐기",
+    "originLocal": "로컬 — 이 머신",
+    "originSsh": "SSH 원격 — {{target}}"
+  },
+  "run": {
+    "open": "열기",
+    "close": "완료 기록",
+    "abandon": "그냥 치우기",
+    "outcomePlaceholder": "한 줄로: 무엇이 되었는지",
+    "closedAt": "닫힘",
+    "state": {
+      "running": "실행 중",
+      "waiting": "확인 필요",
+      "closed": "완료",
+      "abandoned": "치움"
+    },
+    "touched": "변경 파일 {{count}}개",
+    "touchedMore": "외 {{count}}개",
+    "verified": "검증"
+  },
+  "git": {
+    "label": "브랜치",
+    "current": "{{name}} 에서 작업",
+    "detached": "detached HEAD",
+    "switch": "이동",
+    "create": "새 브랜치",
+    "createFrom": "{{name}} 기준",
+    "delete": "브랜치 삭제",
+    "deleteConfirm": "로컬 브랜치 \"{{name}}\" 을 삭제합니다. 병합되지 않은 작업이 있으면 git이 거부합니다.",
+    "namePlaceholder": "feat/my-change",
+    "dirtyHint": "커밋되지 않은 변경이 있습니다. 커밋하거나 스태시한 뒤 이동하세요.",
+    "notARepoHint": "git 저장소가 아니라 브랜치 조작을 쓸 수 없습니다.",
+    "switching": "처리 중…",
+    "error": {
+      "nameEmpty": "브랜치 이름을 입력하세요.",
+      "nameWhitespace": "브랜치 이름에 공백을 쓸 수 없습니다.",
+      "nameTooLong": "브랜치 이름이 너무 깁니다.",
+      "nameReserved": "브랜치 이름에 ~ ^ : ? * [ ] \\\\ .. @{ 를 쓸 수 없습니다.",
+      "nameEdges": "브랜치 이름의 시작/끝이 규칙에 맞지 않습니다.",
+      "notARepo": "이 폴더는 git 저장소가 아닙니다.",
+      "noSuchBranch": "\"{{name}}\" 로컬 브랜치가 없습니다.",
+      "alreadyExists": "\"{{name}}\" 브랜치가 이미 있습니다.",
+      "dirty": "커밋되지 않은 변경이 있습니다. 먼저 커밋하거나 스태시하세요.",
+      "deleteCurrent": "현재 작업 중인 브랜치는 삭제할 수 없습니다.",
+      "gitFailed": "git 거부: {{message}}",
+      "network": "서버에 연결하지 못했습니다."
+    }
+  },
+  "auth": {
+    "title": "open-alive 인증",
+    "body": "이 서버는 토큰을 요구합니다. `open-alive token new` 로 발급한 기기 토큰을 붙여넣거나, `open-alive start` 로 대시보드를 다시 여세요.",
+    "placeholder": "기기 토큰",
+    "submit": "연결",
+    "invalid": "토큰이 거부되었습니다. 다시 확인해 주세요."
+  },
+  "mobile": {
+    "listTitle": "티켓",
+    "filterAll": "전체",
+    "filterActive": "진행중",
+    "filterDecision": "답변대기",
+    "filterDone": "완료",
+    "empty": "아직 티켓이 없습니다",
+    "newTicket": "새 티켓",
+    "composeTitle": "새 티켓",
+    "goalLabel": "무엇을 시킬까요?",
+    "goalPlaceholder": "예: 로그인 화면의 오류 메시지를 한국어로 바꿔줘",
+    "projectLabel": "어느 프로젝트에서",
+    "noProjects": "선택할 프로젝트가 없습니다. 서버의 OPEN_ALIVE_TICKET_ROOTS 에 폴더를 지정하세요.",
+    "presetLabel": "얼마나 깊게",
+    "create": "만들기",
+    "creating": "만드는 중…",
+    "back": "뒤로",
+    "resultLabel": "결과",
+    "noResult": "결과 없음",
+    "questionLabel": "에이전트가 묻고 있습니다",
+    "answerPlaceholder": "답변을 적으세요",
+    "send": "보내기",
+    "sending": "보내는 중…",
+    "cancelTicket": "취소",
+    "retryTicket": "재시도",
+    "offline": "서버와 연결이 끊겼습니다",
+    "tabTickets": "티켓",
+    "tabSessions": "세션",
+    "sessionsEmpty": "실행 중인 세션이 없습니다",
+    "sessionsLoading": "불러오는 중…",
+    "conversationEmpty": "아직 대화가 없습니다",
+    "openTerminal": "터미널 열기",
+    "terminalTitle": "터미널",
+    "terminalInput": "명령 입력",
+    "terminalSend": "전송",
+    "terminalNew": "새 터미널",
+    "terminalAttaching": "연결 중…",
+    "terminalGone": "이 터미널은 종료되었습니다",
+    "terminalReadOnly": "읽기 전용 — 입력이 허용되지 않았습니다",
+    "roleUser": "나",
+    "roleAssistant": "에이전트",
+    "roleTool": "도구",
+    "roleSystem": "시스템",
+    "needsApproval": "승인 대기",
+    "statusBadgeVerified": "검증완료",
+    "statusBadgeFlagged": "이견있음",
+    "statusBadgeVerifying": "검증중",
+    "statusBadgeUnverified": "미검증",
+    "locationLocal": "로컬",
+    "locationSsh": "SSH",
+    "settingsLabel": "설정",
+    "branchLabel": "브랜치",
+    "pickFolder": "폴더 선택",
+    "sheetClose": "닫기",
+    "deleteTicket": "삭제",
+    "deleteConfirm": "이 티켓을 삭제할까요?",
+    "ratingLabel": "평가",
+    "home": "홈 — 티켓으로",
+    "pullToRefresh": "당겨서 새로고침",
+    "releaseToRefresh": "놓으면 새로고침",
+    "refreshing": "새로고침 중…"
+  },
+  "appearance": {
+    "toggle": "화면 모드: {{current}} (클릭 시 {{next}})",
+    "dark": "다크",
+    "light": "라이트",
+    "system": "시스템 설정"
+  }
+}

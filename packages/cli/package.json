@@ -1,0 +1,21 @@
+{
+  "name": "@open-alive/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "open-alive": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@open-alive/core": "workspace:*",
+    "@open-alive/hooks": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22"
+  }
+}

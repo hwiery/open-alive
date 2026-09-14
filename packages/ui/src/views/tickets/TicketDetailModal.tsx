@@ -1,0 +1,955 @@
+import { useEffect, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
+import type {
+  Ticket, TicketEvaluation, TicketTurn, TicketDelegation, EvalLabel,
+  TicketVerification, TicketCommit, TicketDecisionPanel,
+} from '@open-alive/core';
+import { AgentExitReport } from './AgentExitReport.tsx';
+import { legacyAgentExit } from './legacyAgentExit.ts';
+import { Markdown } from './Markdown.tsx';
+import {
+  projectName,
+  formatStarted,
+  STATUS_COLOR,
+  formatTokens,
+  formatCost,
+  formatDuration,
+  parseDecisionOptions,
+  reviewPhase,
+  reviewPhaseKey,
+  REVIEW_PHASE_BORDER,
+  type DecisionOption,
+} from './ticketDisplay.ts';
+import type { EvaluateFn, ReplyFn } from './useTickets.ts';
+
+interface TicketDetailModalProps {
+  ticket: Ticket;
+  evaluation?: TicketEvaluation | null;
+  onClose: () => void;
+  onRetry: (id: string) => void;
+  onCancel: (id: string) => void;
+  onDelete: (id: string) => void;
+  onEvaluate?: EvaluateFn;
+  /** Submit a follow-up prompt for a decision ticket; resolves true on success. */
+  onReply?: ReplyFn;
+}
+
+export function TicketDetailModal({ ticket, evaluation, onClose, onRetry, onCancel, onDelete, onEvaluate, onReply }: TicketDetailModalProps) {
+  const { t } = useTranslation();
+  const isActive = ticket.state === 'queued' || ticket.state === 'running' || ticket.state === 'verifying';
+  const isDecision = ticket.state === 'decision';
+  const decisionColor = STATUS_COLOR.decision;
+  const turns = ticket.turns ?? [];
+
+  // Lifted so a click on a decision option can pre-fill the reply composer.
+  const [replyText, setReplyText] = useState('');
+
+  // The trailing turn is always surfaced by a dedicated panel below the thread:
+  // a pending decision by the DecisionPanel, and a settled result by the Markdown
+  // result section. Either way, drop it from the history thread so the same
+  // content is never shown twice (and the final result renders as full markdown,
+  // not a truncated pre-wrap chat bubble).
+  const lastTurn = turns.length > 0 ? turns[turns.length - 1] : undefined;
+  const dropsTrailing =
+    !!lastTurn && (isDecision ? lastTurn.kind === 'decision' : lastTurn.kind === 'result');
+  const threadTurns = dropsTrailing ? turns.slice(0, -1) : turns;
+  const hasConversation = threadTurns.some((tn) => tn.role === 'user');
+  // Show the history thread only when there is genuine back-and-forth or multiple
+  // rounds; a first pending decision has no history worth a thread.
+  const showThread = threadTurns.length > 0 && (hasConversation || (ticket.rounds ?? 1) > 1);
+  // Always render the agent's latest result/context as markdown — including after
+  // a decision-driven completion, where the thread above carries only the prior
+  // back-and-forth. The decision panel (when pending) lives separately at the bottom.
+  const showResult = !!ticket.result;
+  // Tickets that failed before the server recorded a structured exit still carry
+  // the old one-line message; parse it back so they get the same explanation.
+  const agentExit = ticket.agentExit ?? legacyAgentExit(ticket);
+  const decision = isDecision && ticket.decisionQuestion ? parseDecisionOptions(ticket.decisionQuestion) : null;
+  // The 5-point rating is docked at the bottom too, so a settled ticket can be
+  // rated without scrolling back down through the report.
+  const showEvalDock = !!evaluation && !!onEvaluate;
+
+  // ESC closes the modal.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const meta: string[] = [formatStarted(ticket)];
+  // Prefer the exact version the run actually reported; fall back to the
+  // requested id while the ticket is still queued and nothing has come back yet.
+  if (ticket.model) meta.push(ticket.model);
+  else if (ticket.requestedModel) meta.push(ticket.requestedModel);
+  if (ticket.thinking) meta.push('thinking');
+  if (ticket.effort) meta.push(`effort:${ticket.effort}`);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.6)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: 20,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--bg-secondary, #161b22)',
+          border: '1px solid var(--border-default, #30363d)',
+          borderRadius: 14,
+          width: 'min(1180px, 100%)',
+          maxHeight: '88vh',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 20px', borderBottom: '1px solid var(--border-default, #30363d)', flexShrink: 0 }}>
+          <span style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13, opacity: 0.6 }}>#{ticket.seq}</span>
+          <span style={badgeStyle}>{projectName(ticket.cwd)}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 12, fontFamily: 'var(--font-mono, monospace)', opacity: 0.6 }}>
+            {meta.join(' · ')}
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t('tickets.close')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-secondary, #8b949e)',
+              cursor: 'pointer',
+              fontSize: 18,
+              lineHeight: 1,
+              padding: '2px 6px',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Body — scrolls under the pinned dock below */}
+        <div style={{ padding: 20, overflowY: 'auto', flex: '1 1 auto', minHeight: 0 }}>
+          <Section label={t('tickets.goalLabel')}>
+            <div style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--text-primary, #e6edf3)' }}>{ticket.goal}</div>
+          </Section>
+
+          {showThread && (
+            <Section label={t('tickets.threadLabel')}>
+              <Thread turns={threadTurns} t={t} />
+            </Section>
+          )}
+
+          {ticket.headline && (
+            <Section label={t('tickets.headlineLabel')}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--accent-blue, #58a6ff)' }}>{ticket.headline}</div>
+            </Section>
+          )}
+
+          {ticket.state === 'failed' && (
+            <Section label={t('tickets.failureLabel')}>
+              <div style={{ fontSize: 13, color: 'var(--accent-red, #f85149)', lineHeight: 1.5 }}>
+                {ticket.failureReason ? t(`tickets.failureReason.${ticket.failureReason}`) : ''}
+                {ticket.error ? `: ${ticket.error}` : ''}
+              </div>
+              {/* When the process itself died, the one-liner above is the headline
+                  and this is the explanation: what happened, what it means, what
+                  to check, what to do next. */}
+              {agentExit && (
+                <div style={{ marginTop: 10 }}>
+                  <AgentExitReport exit={agentExit} t={t} />
+                </div>
+              )}
+            </Section>
+          )}
+
+          {showResult && (
+            <Section label={t('tickets.resultLabel')}>
+              <Markdown text={ticket.result ?? ''} />
+            </Section>
+          )}
+
+          {(ticket.model || ticket.usage) && (
+            <Section label={t('tickets.runInfoLabel')}>
+              <RunInfo ticket={ticket} t={t} />
+            </Section>
+          )}
+
+          {ticket.delegations && ticket.delegations.length > 0 && (
+            <Section label={t('tickets.delegationsLabel')}>
+              <Delegations delegations={ticket.delegations} />
+            </Section>
+          )}
+
+          {/* Advisory panel sits directly above the question it was asked, so a
+              human taking over reads the models' attempt before their own. */}
+          {ticket.decisionPanel && (
+            <Section label={t('tickets.advisoryLabel')}>
+              <AdvisoryReport panel={ticket.decisionPanel} t={t} />
+            </Section>
+          )}
+
+          {/* Bottom-of-modal review report: who checked this, what they said,
+              and what was committed as a result. */}
+          {(ticket.verification || ticket.commit) && (
+            <Section label={t('tickets.verificationReportLabel')}>
+              <VerificationReport ticket={ticket} t={t} />
+            </Section>
+          )}
+        </div>
+
+        {/* Action dock — pinned above the composer/actions so what the human has to
+            answer (or rate) stays on screen while the context above scrolls. */}
+        {(decision || showEvalDock) && (
+          <div
+            style={{
+              flexShrink: 0,
+              borderTop: `1px solid ${decision ? `color-mix(in srgb, ${decisionColor} 45%, var(--border-default, #30363d))` : 'var(--border-default, #30363d)'}`,
+              background: 'var(--bg-secondary, #161b22)',
+              padding: '12px 20px',
+              maxHeight: '40vh',
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+            }}
+          >
+            {decision && (
+              <DockSection label={t('tickets.decisionLabel')}>
+                <DecisionPanel
+                  decision={decision}
+                  color={decisionColor}
+                  pickable={!!onReply}
+                  onPick={(o) => setReplyText(`${o.key}) ${o.text}`)}
+                  t={t}
+                />
+              </DockSection>
+            )}
+
+            {evaluation && onEvaluate && (
+              <DockSection label={t('tickets.evaluateLabel')}>
+                <EvalSection ticketId={ticket.id} evaluation={evaluation} onEvaluate={onEvaluate} onClose={onClose} t={t} />
+              </DockSection>
+            )}
+          </div>
+        )}
+
+        {/* Reply composer — only while a decision is pending */}
+        {isDecision && onReply && (
+          <ReplyComposer
+            ticketId={ticket.id}
+            color={decisionColor}
+            value={replyText}
+            onChange={setReplyText}
+            onReply={onReply}
+            onSent={onClose}
+            t={t}
+          />
+        )}
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 8, padding: '14px 20px', borderTop: '1px solid var(--border-default, #30363d)', flexShrink: 0 }}>
+          {isActive && (
+            <button type="button" onClick={() => onCancel(ticket.id)} style={btnStyle}>
+              {t('tickets.cancel')}
+            </button>
+          )}
+          {ticket.state === 'failed' && (
+            <button type="button" onClick={() => onRetry(ticket.id)} style={btnStyle}>
+              {t('tickets.retry')}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              onDelete(ticket.id);
+              onClose();
+            }}
+            style={{ ...btnStyle, marginLeft: 'auto', color: 'var(--accent-red, #f85149)', borderColor: 'var(--accent-red, #f85149)' }}
+          >
+            {t('tickets.delete')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One-click human rating for a settled ticket: a single 5-point scale that
+ * encodes both the label (good/bad/neutral) and its weight (intensity). Clicking
+ * any point saves immediately with the optional note and closes the modal — the
+ * label feeds the project's learned guide (guideSynthesizer on the server).
+ */
+const EVAL_SCALE: { key: string; label: EvalLabel; weight: number; accent: string }[] = [
+  { key: 'tickets.evalVeryBad', label: 'bad', weight: 5, accent: 'var(--accent-red, #f85149)' },
+  { key: 'tickets.evalBad', label: 'bad', weight: 3, accent: 'var(--accent-red, #f85149)' },
+  { key: 'tickets.evalNeutral', label: 'unrated', weight: 1, accent: 'var(--text-secondary, #8b949e)' },
+  { key: 'tickets.evalGood', label: 'good', weight: 3, accent: 'var(--accent-green, #3fb950)' },
+  { key: 'tickets.evalVeryGood', label: 'good', weight: 5, accent: 'var(--accent-green, #3fb950)' },
+];
+
+function EvalSection({
+  ticketId,
+  evaluation,
+  onEvaluate,
+  onClose,
+  t,
+}: {
+  ticketId: string;
+  evaluation: TicketEvaluation;
+  onEvaluate: EvaluateFn;
+  onClose: () => void;
+  t: (key: string) => string;
+}) {
+  const [saving, setSaving] = useState(false);
+
+  // One-cue: save the label+weight in a single click, then close.
+  const commit = async (label: EvalLabel, weight: number) => {
+    if (saving) return;
+    setSaving(true);
+    const result = await onEvaluate(ticketId, { label, weight });
+    setSaving(false);
+    if (result) onClose();
+  };
+
+  const isCurrent = (label: EvalLabel, weight: number) =>
+    evaluation.humanLabeled && evaluation.label === label && evaluation.weight === weight;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', gap: 6 }}>
+        {EVAL_SCALE.map((s) => {
+          const on = isCurrent(s.label, s.weight);
+          return (
+            <button
+              key={s.key}
+              type="button"
+              disabled={saving}
+              onClick={() => commit(s.label, s.weight)}
+              title={t(s.key)}
+              style={{
+                ...btnStyle,
+                flex: 1,
+                padding: '9px 4px',
+                fontWeight: 600,
+                textAlign: 'center',
+                color: on ? 'var(--on-accent)' : s.accent,
+                borderColor: s.accent,
+                background: on ? s.accent : `color-mix(in srgb, ${s.accent} 10%, transparent)`,
+                cursor: saving ? 'wait' : 'pointer',
+                opacity: saving ? 0.6 : 1,
+              }}
+            >
+              {t(s.key)}
+            </button>
+          );
+        })}
+      </div>
+
+      {!evaluation.humanLabeled && (
+        <span style={{ fontSize: 11, color: 'var(--text-secondary, #8b949e)', opacity: 0.7 }}>
+          {t('tickets.evalAuto')}: {evaluation.autoLabel}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Model, reasoning effort, and token/cost/turn accounting for the run. */
+function RunInfo({ ticket, t }: { ticket: Ticket; t: (key: string) => string }) {
+  const u = ticket.usage;
+  const rows: [string, string][] = [];
+  if (ticket.rounds && ticket.rounds > 1) rows.push([t('tickets.runRounds'), String(ticket.rounds)]);
+  if (ticket.preset) rows.push([t('tickets.runPreset'), t(`tickets.preset.${ticket.preset}`)]);
+  // Requested id and served version are separate rows even though presets now
+  // pin a full id: a `--fallback-model` hop, an unsupported `--model` on a remote
+  // host, or a server-side substitution still makes them differ, and that
+  // difference is exactly what makes a past ticket's cost/quality interpretable.
+  // Both stay raw here — the detail view is the record of what ran, not a label.
+  if (ticket.requestedModel) rows.push([t('tickets.runRequestedModel'), ticket.requestedModel]);
+  if (ticket.model) rows.push([t('tickets.runModel'), ticket.model]);
+  if (ticket.effort) rows.push([t('tickets.runEffort'), ticket.effort]);
+  if (ticket.thinking) rows.push([t('tickets.runThinking'), 'on']);
+  // The resume handle. Recorded as soon as the agent announces it, so it is here
+  // even for a ticket that was cancelled or died mid-run — that is precisely when
+  // `claude --resume <id>` (or reading the session's transcript) is the only way
+  // back to work that has already been paid for.
+  if (ticket.claudeSessionId) rows.push([t('tickets.runSessionId'), ticket.claudeSessionId]);
+  if (ticket.unsupportedFlags && ticket.unsupportedFlags.length > 0) {
+    rows.push([t('tickets.runFlagsDropped'), ticket.unsupportedFlags.join(', ')]);
+  }
+  if (u) {
+    const tok = (n?: number) => formatTokens(n) ?? '—';
+    if (u.inputTokens !== undefined) rows.push([t('tickets.runInput'), tok(u.inputTokens)]);
+    if (u.outputTokens !== undefined) rows.push([t('tickets.runOutput'), tok(u.outputTokens)]);
+    if (u.cacheReadTokens !== undefined) rows.push([t('tickets.runCacheRead'), tok(u.cacheReadTokens)]);
+    if (u.cacheCreationTokens !== undefined) rows.push([t('tickets.runCacheCreate'), tok(u.cacheCreationTokens)]);
+    if (u.totalTokens !== undefined) rows.push([t('tickets.runTotal'), tok(u.totalTokens)]);
+    const cost = formatCost(u.costUsd);
+    if (cost) rows.push([t('tickets.runCost'), cost]);
+    if (u.numTurns !== undefined) rows.push([t('tickets.runTurns'), String(u.numTurns)]);
+    const dur = formatDuration(u.durationMs);
+    if (dur) rows.push([t('tickets.runDuration'), dur]);
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 16, rowGap: 5 }}>
+      {rows.map(([k, v]) => (
+        <div key={k} style={{ display: 'contents' }}>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary, #8b949e)' }}>{k}</span>
+          <span style={{ fontSize: 12, fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-primary, #e6edf3)' }}>{v}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Sub-agent delegations made by the orchestrator. Makes the "which models did
+ * this actually use" question answerable — each row is one oa-delegate call,
+ * with the target model, its token cost, and the prompt that was handed off.
+ */
+function Delegations({ delegations }: { delegations: TicketDelegation[] }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {delegations.map((d, i) => {
+        const tok = formatTokens(d.totalTokens);
+        const cost = formatCost(d.costUsd);
+        const meta = [tok ? `${tok} tok` : null, cost].filter(Boolean).join(' · ');
+        return (
+          <div
+            key={i}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 3,
+              padding: '8px 10px',
+              borderRadius: 8,
+              background: 'var(--bg-tertiary, #161b22)',
+              border: '1px solid var(--border-default, #30363d)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
+              <span style={{ fontSize: 12, fontFamily: 'var(--font-mono, monospace)', color: 'var(--accent-blue, #58a6ff)' }}>
+                {/* A fallback took over (first choice rate-limited/retired): show both,
+                    so a substituted answer is never mistaken for the requested model. */}
+                {d.requestedModel && (
+                  <span style={{ color: 'var(--text-secondary, #8b949e)' }}>{d.requestedModel} → </span>
+                )}
+                {d.model}
+              </span>
+              {meta && (
+                <span style={{ fontSize: 11, fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-secondary, #8b949e)' }}>
+                  {meta}
+                </span>
+              )}
+            </div>
+            {d.promptPreview && (
+              <span style={{ fontSize: 12, color: 'var(--text-secondary, #8b949e)', lineHeight: 1.4 }}>
+                {d.promptPreview}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Conversation thread: agent results/decisions and the user's replies, in order. */
+function Thread({ turns, t }: { turns: TicketTurn[]; t: (key: string) => string }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {turns.map((turn, i) => {
+        const isUser = turn.role === 'user';
+        const accent =
+          turn.kind === 'decision'
+            ? STATUS_COLOR.decision
+            : isUser
+              ? 'var(--accent-blue, #58a6ff)'
+              : 'var(--accent-green, #3fb950)';
+        const roleKey = isUser ? 'tickets.threadUser' : turn.kind === 'decision' ? 'tickets.threadDecision' : 'tickets.threadAgent';
+        return (
+          <div key={i} style={{ alignSelf: isUser ? 'flex-end' : 'flex-start', maxWidth: '88%', minWidth: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: accent, marginBottom: 3, textAlign: isUser ? 'right' : 'left' }}>
+              {t(roleKey)}
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                lineHeight: 1.5,
+                padding: '8px 12px',
+                borderRadius: 10,
+                background: isUser ? 'rgba(88,166,255,0.10)' : 'var(--bg-tertiary, #21262d)',
+                border: `1px solid color-mix(in srgb, ${accent} 30%, transparent)`,
+                color: 'var(--text-primary, #e6edf3)',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {turn.headline && (
+                <div style={{ fontWeight: 600, color: accent, marginBottom: turn.text ? 4 : 0 }}>{turn.headline}</div>
+              )}
+              {turn.text}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The pending decision, shown at the bottom of the modal: the question stem
+ * followed by the labeled options laid out side by side as buttons, so the
+ * choices read as a single row to pick from rather than a stack to scroll.
+ * Long options wrap onto the next line instead of forcing a horizontal scroll.
+ * When a reply is possible, clicking one pre-fills the composer with that
+ * choice (the human still confirms before sending).
+ */
+function DecisionPanel({
+  decision,
+  color,
+  pickable,
+  onPick,
+  t,
+}: {
+  decision: { prompt: string; options: DecisionOption[] };
+  color: string;
+  pickable: boolean;
+  onPick: (option: DecisionOption) => void;
+  t: (key: string) => string;
+}) {
+  const { prompt, options } = decision;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {prompt && (
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 600,
+            lineHeight: 1.5,
+            color,
+            background: `color-mix(in srgb, ${color} 12%, transparent)`,
+            border: `1px solid color-mix(in srgb, ${color} 40%, transparent)`,
+            borderRadius: 10,
+            padding: '10px 12px',
+          }}
+        >
+          {prompt}
+        </div>
+      )}
+
+      {options.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {options.map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              onClick={pickable ? () => onPick(o) : undefined}
+              style={{
+                display: 'flex',
+                // Top-aligned so a one-line option and a wrapped one keep their
+                // key badges on the same baseline across the row.
+                alignItems: 'flex-start',
+                gap: 10,
+                // Share the row evenly; drop to the next line only when a card
+                // would fall under ~220px, which is where two-word options stop
+                // being readable.
+                flex: '1 1 220px',
+                minWidth: 0,
+                textAlign: 'left',
+                padding: '12px 14px',
+                borderRadius: 10,
+                border: `1px solid color-mix(in srgb, ${color} 35%, var(--border-default, #30363d))`,
+                background: 'var(--bg-tertiary, #21262d)',
+                color: 'var(--text-primary, #e6edf3)',
+                cursor: pickable ? 'pointer' : 'default',
+                transition: 'background-color 0.15s ease, border-color 0.15s ease, transform 0.12s ease',
+              }}
+              onMouseEnter={(e) => {
+                if (!pickable) return;
+                e.currentTarget.style.background = `color-mix(in srgb, ${color} 14%, transparent)`;
+                e.currentTarget.style.borderColor = color;
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={(e) => {
+                if (!pickable) return;
+                e.currentTarget.style.background = 'var(--bg-tertiary, #21262d)';
+                e.currentTarget.style.borderColor = `color-mix(in srgb, ${color} 35%, var(--border-default, #30363d))`;
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              <span
+                style={{
+                  flexShrink: 0,
+                  width: 24,
+                  height: 24,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 7,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  fontFamily: 'var(--font-mono, monospace)',
+                  color: 'var(--on-accent)',
+                  background: color,
+                }}
+              >
+                {o.key}
+              </span>
+              <span style={{ fontSize: 13, lineHeight: 1.5, minWidth: 0, paddingTop: 2, wordBreak: 'break-word' }}>{o.text}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {pickable && options.length > 0 && (
+        <span style={{ fontSize: 11, color: 'var(--text-secondary, #8b949e)', opacity: 0.75 }}>
+          {t('tickets.decisionPickHint')}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Follow-up input for a pending decision: submits a reply that resumes the run. */
+function ReplyComposer({
+  ticketId,
+  color,
+  value,
+  onChange,
+  onReply,
+  onSent,
+  t,
+}: {
+  ticketId: string;
+  color: string;
+  value: string;
+  onChange: (text: string) => void;
+  onReply: ReplyFn;
+  /** Called once the reply is accepted — the answer is in, so the modal closes. */
+  onSent: () => void;
+  t: (key: string) => string;
+}) {
+  const [sending, setSending] = useState(false);
+  const canSend = value.trim().length > 0 && !sending;
+
+  const send = async () => {
+    if (!canSend) return;
+    setSending(true);
+    const ok = await onReply(ticketId, value.trim());
+    setSending(false);
+    // A failed send keeps both the draft and the modal, so the answer is not
+    // lost and can be retried; a successful one is done — close it.
+    if (!ok) return;
+    onChange('');
+    onSent();
+  };
+
+  return (
+    <div style={{ display: 'flex', gap: 8, padding: '12px 20px', borderTop: '1px solid var(--border-default, #30363d)', alignItems: 'flex-end', flexShrink: 0 }}>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={t('tickets.decisionAnswer')}
+        rows={2}
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') void send();
+        }}
+        style={{
+          flex: 1,
+          resize: 'vertical',
+          fontSize: 13,
+          fontFamily: 'var(--font-ui, system-ui)',
+          padding: '8px 10px',
+          borderRadius: 8,
+          border: '1px solid var(--border-default, #30363d)',
+          background: 'var(--bg-primary, #0d1117)',
+          color: 'var(--text-primary, #e6edf3)',
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => void send()}
+        disabled={!canSend}
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          padding: '8px 16px',
+          borderRadius: 8,
+          border: 'none',
+          background: canSend ? color : 'var(--bg-tertiary, #21262d)',
+          color: canSend ? 'var(--on-accent)' : 'var(--text-secondary, #8b949e)',
+          cursor: canSend ? 'pointer' : 'not-allowed',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {sending ? t('tickets.sending') : t('tickets.send')}
+      </button>
+    </div>
+  );
+}
+
+/** Section header for the pinned bottom dock — same label, no bottom margin. */
+function DockSection({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-secondary, #8b949e)' }}>
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Section({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-secondary, #8b949e)', marginBottom: 6 }}>
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+const badgeStyle: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 600,
+  color: 'var(--accent-blue, #58a6ff)',
+  background: 'color-mix(in srgb, var(--accent-blue, #58a6ff) 15%, transparent)',
+  borderRadius: 6,
+  padding: '2px 8px',
+};
+
+const btnStyle: React.CSSProperties = {
+  fontSize: 12,
+  padding: '6px 12px',
+  borderRadius: 8,
+  border: '1px solid var(--border-default, #30363d)',
+  background: 'var(--bg-tertiary, #21262d)',
+  color: 'var(--text-secondary, #8b949e)',
+  cursor: 'pointer',
+};
+
+/** Small key→value row used by both review reports. */
+function ReportRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div style={{ display: 'flex', gap: 10, fontSize: 12, lineHeight: 1.6 }}>
+      <span style={{ minWidth: 92, flexShrink: 0, color: 'var(--text-secondary, #8b949e)' }}>{label}</span>
+      <span style={{ color: 'var(--text-primary, #e6edf3)', minWidth: 0, wordBreak: 'break-word' }}>{children}</span>
+    </div>
+  );
+}
+
+/** `gemini/gemini-3.1-pro-preview` → `gemini-3.1-pro-preview`. */
+function shortModel(model: string): string {
+  return model.includes('/') ? model.slice(model.lastIndexOf('/') + 1) : model;
+}
+
+/**
+ * The completion report.
+ *
+ * A verdict is only worth as much as the reader's ability to check it, so this
+ * lists every reviewer by name and shows what each one actually said — including
+ * the ones that abstained. A single ✓ with no attribution is the thing this
+ * replaces: it looked identical whether three models had agreed or none had run.
+ */
+function VerificationReport({ ticket, t }: { ticket: Ticket; t: (key: string) => string }) {
+  const v: TicketVerification | undefined = ticket.verification;
+  const commit: TicketCommit | undefined = ticket.commit;
+  const phase = reviewPhase(ticket);
+  const phaseColor = REVIEW_PHASE_BORDER[phase];
+  const voters = v?.panel?.filter((o) => o.passed !== null) ?? [];
+  const abstained = v?.panel?.filter((o) => o.passed === null) ?? [];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: phaseColor,
+            border: `1px solid ${phaseColor}`,
+            borderRadius: 5,
+            padding: '1px 6px',
+          }}
+        >
+          {t(reviewPhaseKey(phase))}
+        </span>
+        {v?.consensus && (
+          <span style={{ fontSize: 11, fontFamily: 'var(--font-mono, monospace)', opacity: 0.7 }}>
+            {t('tickets.consensusLabel')} {v.consensus.agree}/{v.consensus.total}
+          </span>
+        )}
+        {/* Passed, but a reviewer voted against. A lone dissent cannot veto and
+            is the shape a real catch arrives in, so it is surfaced here rather
+            than left inside the collapsed panel list. */}
+        {v?.flagged && (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: 'var(--accent-amber, #d29922)',
+              border: '1px solid var(--accent-amber, #d29922)',
+              borderRadius: 5,
+              padding: '1px 6px',
+            }}
+          >
+            {t('tickets.flaggedLabel')}
+          </span>
+        )}
+        {/* Say so explicitly: a report with no reviewers listed must not read
+            as "three models agreed" to someone skimming it. */}
+        {ticket.panelReview === false && (
+          <span style={{ fontSize: 11, opacity: 0.7 }}>{t('tickets.panelOffLabel')}</span>
+        )}
+      </div>
+
+      {v?.reason && <ReportRow label={t('tickets.verdictLabel')}>{v.reason}</ReportRow>}
+
+      {v?.gate && (
+        <ReportRow label={t('tickets.gateLabel')}>
+          <span style={{ color: v.gate.passed ? 'var(--accent-green, #3fb950)' : 'var(--accent-red, #f85149)' }}>
+            {v.gate.passed ? '✓' : '✗'}
+          </span>{' '}
+          {v.gate.reason}
+          {/* Which part of the goal the reviewer judged least covered, stated
+              before it voted. On a pass this is the part worth re-reading. */}
+          {v.gate.coverage && (
+            <div style={{ opacity: 0.7, marginTop: 2 }}>
+              <span style={{ fontWeight: 600 }}>{t('tickets.coverageLabel')}</span> {v.gate.coverage}
+            </div>
+          )}
+        </ReportRow>
+      )}
+
+      {voters.map((o) => (
+        <ReportRow key={o.model} label={shortModel(o.respondedModel ?? o.model)}>
+          <span style={{ color: o.passed ? 'var(--accent-green, #3fb950)' : 'var(--accent-red, #f85149)' }}>
+            {o.passed ? '✓' : '✗'}
+          </span>{' '}
+          {o.reason}
+          {/* The weakest point the reviewer named before voting. On a PASS this
+              is the useful half of the answer — it is where a human looks next. */}
+          {o.gap && (
+            <div style={{ opacity: 0.7, marginTop: 2 }}>
+              <span style={{ fontWeight: 600 }}>{t('tickets.gapLabel')}</span> {o.gap}
+            </div>
+          )}
+        </ReportRow>
+      ))}
+
+      {abstained.length > 0 && (
+        <ReportRow label={t('tickets.abstainedLabel')}>
+          <span style={{ opacity: 0.7 }}>
+            {abstained.map((o) => `${shortModel(o.model)} (${o.error ?? '—'})`).join(', ')}
+          </span>
+        </ReportRow>
+      )}
+
+      {commit && (
+        <ReportRow label={t('tickets.commitLabel')}>
+          {commit.committed ? (
+            <>
+              <span style={{ fontFamily: 'var(--font-mono, monospace)', color: 'var(--accent-green, #3fb950)' }}>
+                {commit.sha ?? 'HEAD'}
+              </span>
+              {typeof commit.files === 'number' && (
+                <span style={{ opacity: 0.7 }}> · {commit.files} {t('tickets.filesLabel')}</span>
+              )}
+              {commit.message && <div style={{ opacity: 0.8, marginTop: 2 }}>{commit.message}</div>}
+            </>
+          ) : (
+            <span style={{ opacity: 0.7 }}>{commit.skipped ?? t('tickets.commitSkipped')}</span>
+          )}
+        </ReportRow>
+      )}
+    </div>
+  );
+}
+
+/**
+ * What the advisory models said about a pending decision.
+ *
+ * Shown whether they converged or not: when they did, it explains why the ticket
+ * moved on without the human; when they did not, their disagreement is the most
+ * useful thing the human can read before deciding themselves.
+ */
+function AdvisoryReport({ panel, t }: { panel: TicketDecisionPanel; t: (key: string) => string }) {
+  const stageColor =
+    panel.stage === 'decided'
+      ? 'var(--accent-green, #3fb950)'
+      : panel.stage === 'failed'
+        ? 'var(--accent-pink, #f778ba)'
+        : 'var(--accent-amber, #d29922)';
+  const answered = panel.opinions.filter((o) => !o.error);
+  const failed = panel.opinions.filter((o) => o.error);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: stageColor,
+            border: `1px solid ${stageColor}`,
+            borderRadius: 5,
+            padding: '1px 6px',
+          }}
+        >
+          {t(`tickets.decisionStage.${panel.stage}`)}
+        </span>
+        {panel.consensus && panel.consensus.total > 0 && (
+          <span style={{ fontSize: 11, fontFamily: 'var(--font-mono, monospace)', opacity: 0.7 }}>
+            {t('tickets.consensusLabel')} {panel.consensus.agree}/{panel.consensus.total}
+          </span>
+        )}
+      </div>
+
+      {panel.resolution && <ReportRow label={t('tickets.resolutionLabel')}>{panel.resolution}</ReportRow>}
+      {/* Labels disagreed and a model judged the answers equivalent — weaker
+          evidence than a label match, so it is shown rather than hidden. */}
+      {panel.tiebreak && (
+        <ReportRow label={t('tickets.tiebreakLabel')}>
+          <span style={{ fontFamily: 'var(--font-mono, monospace)', opacity: 0.7, marginRight: 6 }}>
+            {shortModel(panel.tiebreak.model)}
+          </span>
+          {panel.tiebreak.why}
+        </ReportRow>
+      )}
+      {panel.reason && <ReportRow label={t('tickets.escalationLabel')}>{panel.reason}</ReportRow>}
+
+      {answered.map((o) => (
+        <ReportRow key={o.model} label={shortModel(o.respondedModel ?? o.model)}>
+          {o.choice && <strong style={{ marginRight: 4 }}>{o.choice})</strong>}
+          {o.recommendation}
+          {typeof o.confidence === 'number' && (
+            <span style={{ opacity: 0.6, fontFamily: 'var(--font-mono, monospace)' }}> ({o.confidence.toFixed(2)})</span>
+          )}
+          {o.rationale && <div style={{ opacity: 0.75, marginTop: 2 }}>{o.rationale}</div>}
+        </ReportRow>
+      ))}
+
+      {failed.length > 0 && (
+        <ReportRow label={t('tickets.abstainedLabel')}>
+          <span style={{ opacity: 0.7 }}>{failed.map((o) => `${shortModel(o.model)} (${o.error})`).join(', ')}</span>
+        </ReportRow>
+      )}
+    </div>
+  );
+}

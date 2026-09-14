@@ -1,0 +1,178 @@
+import { WebSocketServer, type WebSocket } from 'ws';
+import type { IncomingMessage } from 'node:http';
+import type { Duplex } from 'node:stream';
+import type { RunTree, Ticket, UsageLimitsSnapshot, WSServerMessage, WSClientMessage } from '@open-alive/core';
+import { parseClientMessage } from './wsClientSchema.js';
+import { isRemoteWsMessageAllowed, selectWsProtocol } from './wsAuth.js';
+import type { RemoteTerminalLevel } from './remoteTerminal.js';
+
+const MAX_CLIENTS = 50;
+
+export interface WSBroadcasterOptions {
+  getSnapshot: () => { agents: unknown[]; recentEvents: unknown[]; completedSessions: unknown[]; stats: unknown; resumableSessions: unknown[] };
+  /**
+   * Run registry snapshot, sent alongside the agent snapshot on connect. Absent
+   * when the run subsystem is off; clients then just never see a `run:snapshot`.
+   */
+  getRunTree?: () => RunTree;
+  /**
+   * Ticket snapshot, sent alongside the agent snapshot on connect. Without it a
+   * client that missed a `ticket:update` while disconnected stayed wrong until
+   * a manual reload — the board is the default view, so its own refetch (which
+   * only fires when the view activates) never runs again.
+   */
+  getTickets?: () => Ticket[];
+  /**
+   * Subscription usage snapshot, sent on connect. Without it a fresh client
+   * would show no usage pills until the next 60s poll landed.
+   */
+  getUsageLimits?: () => UsageLimitsSnapshot | null;
+  maxClients?: number;
+  onClientMessage?: (ws: WebSocket, msg: WSClientMessage) => void;
+  onClientDisconnect?: (ws: WebSocket) => void;
+  /** How much of the terminal a device connection may drive. Default: none. */
+  remoteTerminalLevel?: RemoteTerminalLevel;
+}
+
+/** Per-connection facts the upgrade established. */
+export interface WSConnectionMeta {
+  /** Authenticated from off-box: may read the stream, may not drive a terminal. */
+  remote?: boolean;
+}
+
+export class WSBroadcaster {
+  private wss: WebSocketServer;
+  private clients = new Set<WebSocket>();
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private getSnapshot: WSBroadcasterOptions['getSnapshot'];
+  private getRunTree?: WSBroadcasterOptions['getRunTree'];
+  private getTickets?: WSBroadcasterOptions['getTickets'];
+  private getUsageLimits?: WSBroadcasterOptions['getUsageLimits'];
+  private maxClients: number;
+  private onClientMessage?: WSBroadcasterOptions['onClientMessage'];
+  private onClientDisconnect?: WSBroadcasterOptions['onClientDisconnect'];
+  /** Connections that authenticated as a remote device rather than as this machine. */
+  private remoteClients = new WeakSet<WebSocket>();
+  private remoteTerminalLevel: RemoteTerminalLevel;
+
+  constructor(options: WSBroadcasterOptions) {
+    this.getSnapshot = options.getSnapshot;
+    this.getRunTree = options.getRunTree;
+    this.getTickets = options.getTickets;
+    this.getUsageLimits = options.getUsageLimits;
+    this.maxClients = options.maxClients ?? MAX_CLIENTS;
+    this.onClientMessage = options.onClientMessage;
+    this.onClientDisconnect = options.onClientDisconnect;
+    this.remoteTerminalLevel = options.remoteTerminalLevel ?? 'off';
+    // A browser that offers a subprotocol disconnects unless the server names
+    // one back, and the token rides the subprotocol — so echo it.
+    this.wss = new WebSocketServer({ noServer: true, handleProtocols: selectWsProtocol });
+
+    this.wss.on('connection', (ws) => {
+      if (this.clients.size >= this.maxClients) {
+        ws.close(1013, 'Too many connections');
+        return;
+      }
+      this.clients.add(ws);
+      console.log(`[ws] client connected (${this.clients.size} total)`);
+
+      this.send(ws, { type: 'snapshot', ...this.getSnapshot() } as WSServerMessage);
+      this.sendRunTree(ws);
+      this.sendTickets(ws);
+      this.sendUsageLimits(ws);
+
+      ws.on('message', (raw) => {
+        const msg = parseClientMessage(raw.toString());
+        if (!msg) {
+          // Malformed or schema-invalid payload — drop it rather than trusting a
+          // bad shape downstream (e.g. a non-string tabId used as a Map key).
+          console.warn('[ws] dropped invalid client message');
+          return;
+        }
+        if (this.remoteClients.has(ws) && !isRemoteWsMessageAllowed(msg.type, this.remoteTerminalLevel)) {
+          // Above the configured level: the device may watch but not type, or
+          // type but not spawn. The level is set once, at boot.
+          console.warn(`[ws] refused ${msg.type} from a remote client (level=${this.remoteTerminalLevel})`);
+          return;
+        }
+        if (msg.type === 'ping') {
+          this.send(ws, { type: 'system:heartbeat', timestamp: Date.now() });
+        } else if (msg.type === 'request:snapshot') {
+          this.send(ws, { type: 'snapshot', ...this.getSnapshot() } as WSServerMessage);
+          this.sendRunTree(ws);
+          this.sendTickets(ws);
+        } else {
+          this.onClientMessage?.(ws, msg);
+        }
+      });
+
+      const cleanup = () => {
+        if (!this.clients.has(ws)) return;
+        this.clients.delete(ws);
+        this.onClientDisconnect?.(ws);
+        console.log(`[ws] client disconnected (${this.clients.size} total)`);
+      };
+
+      // A socket that errors may not always emit 'close' — clean up on both so a
+      // dead client's subscriptions never linger in TerminalManager.
+      ws.on('error', (err) => {
+        console.warn('[ws] client socket error:', err.message);
+        cleanup();
+      });
+      ws.on('close', cleanup);
+    });
+
+    this.heartbeatInterval = setInterval(() => {
+      this.broadcast({ type: 'system:heartbeat', timestamp: Date.now() });
+    }, 30_000);
+  }
+
+  /** Send the run tree when the registry is wired; a no-op otherwise. */
+  private sendRunTree(ws: WebSocket): void {
+    const tree = this.getRunTree?.();
+    if (tree) this.send(ws, { type: 'run:snapshot', tree });
+  }
+
+  /** Send the latest usage snapshot when one has been polled; a no-op otherwise. */
+  private sendUsageLimits(ws: WebSocket): void {
+    const usage = this.getUsageLimits?.();
+    if (usage) this.send(ws, { type: 'system:usage', usage });
+  }
+
+  /** Send every ticket when the ticket subsystem is wired; a no-op otherwise. */
+  private sendTickets(ws: WebSocket): void {
+    const tickets = this.getTickets?.();
+    if (tickets) this.send(ws, { type: 'ticket:snapshot', tickets });
+  }
+
+  broadcast(message: WSServerMessage): void {
+    const data = JSON.stringify(message);
+    for (const client of this.clients) {
+      if (client.readyState === client.OPEN) {
+        client.send(data);
+      }
+    }
+  }
+
+  send(ws: WebSocket, message: WSServerMessage): void {
+    if (ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify(message));
+    }
+  }
+
+  getClientCount(): number {
+    return this.clients.size;
+  }
+
+  handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, meta: WSConnectionMeta = {}): void {
+    this.wss.handleUpgrade(req, socket, head, (ws) => {
+      if (meta.remote) this.remoteClients.add(ws);
+      this.wss.emit('connection', ws, req);
+    });
+  }
+
+  close(): void {
+    if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+    this.wss.close();
+  }
+}

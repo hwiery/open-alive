@@ -1,0 +1,260 @@
+@import "tailwindcss";
+
+:root {
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-card: #21262d;
+  --border-color: #30363d;
+  --text-primary: #f0f6fc;
+  --text-secondary: #8b949e;
+  --accent-green: #3fb950;
+  --accent-blue: #58a6ff;
+  --accent-amber: #d29922;
+  --accent-red: #f85149;
+  --accent-purple: #bc8cff;
+  --accent-teal: #39c5cf;
+  --accent-pink: #f778ba;
+  /* Distinct greys for the winding-down lifecycle states so `despawning` and
+     `removed` don't collapse into `idle`. */
+  --state-despawning: #6e7681;
+  --state-removed: #484f58;
+
+  /* Neutral tints layered on a surface (hover, raised rows, inputs). Dark mode
+     lifts with white, light mode sinks with ink — so views never hardcode either. */
+  --surface-1: rgba(255, 255, 255, 0.02);
+  --surface-2: rgba(255, 255, 255, 0.04);
+  --surface-3: rgba(255, 255, 255, 0.08);
+  --hover: rgba(255, 255, 255, 0.06);
+  /* Text on a filled accent (blue/green button). */
+  --on-accent: #0d1117;
+  /* Phone secondary text — one step brighter than --text-secondary. */
+  --text-muted-strong: #a9b4c0;
+  /* Translucent floating frames (terminal overlay, toasts) and the opaque variant. */
+  --frame-bg: rgba(13, 17, 23, 0.92);
+  --frame-bg-solid: rgba(13, 17, 23, 0.96);
+
+  --font-ui: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+
+  /* Spacing scale. Every gap/padding in new code comes from here. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Corner radii. Cards/panels use lg, buttons md, pills full. */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 999px;
+
+  /* Type scale. */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --elev-2: 0 8px 24px rgba(0, 0, 0, 0.4);
+
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+
+  color-scheme: dark;
+}
+
+/* Light palette (GitHub Light). Set by services/appearance.ts on <html>. */
+:root[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f6f8fa;
+  --bg-card: #eaeef2;
+  --border-color: #d0d7de;
+  --text-primary: #1f2328;
+  --text-secondary: #59636e;
+  --accent-green: #1a7f37;
+  --accent-blue: #0969da;
+  --accent-amber: #9a6700;
+  --accent-red: #cf222e;
+  --accent-purple: #8250df;
+  --accent-teal: #1b7c83;
+  --accent-pink: #bf3989;
+  --state-despawning: #6e7781;
+  --state-removed: #8c959f;
+
+  --surface-1: rgba(31, 35, 40, 0.03);
+  --surface-2: rgba(31, 35, 40, 0.05);
+  --surface-3: rgba(31, 35, 40, 0.09);
+  --hover: rgba(31, 35, 40, 0.07);
+  --on-accent: #ffffff;
+  --text-muted-strong: #59636e;
+  --frame-bg: rgba(255, 255, 255, 0.92);
+  --frame-bg-solid: rgba(246, 248, 250, 0.97);
+  /* Dark mode leaves these undefined so each call site keeps its own fallback. */
+  --border-default: #d0d7de;
+  --bg-tertiary: #eaeef2;
+  --text-tertiary: #6e7781;
+  --accent-orange: #bc4c00;
+
+  --elev-1: 0 1px 2px rgba(31, 35, 40, 0.12);
+  --elev-2: 0 8px 24px rgba(31, 35, 40, 0.16);
+
+  color-scheme: light;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-secondary) 30%, transparent);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-secondary) 50%, transparent);
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.95); }
+}
+
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 8px var(--accent-green)33; }
+  50% { box-shadow: 0 0 20px var(--accent-green)55; }
+}
+
+/* Sidebar agent dot — amber "needs attention" pulse for the waiting state.
+   Soft expand+contract glow at 1.4s to feel calmer than the tab-bar's 1.2s sweep
+   (the tab already screams; the sidebar dot just nudges). */
+@keyframes claude-waiting-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 159, 67, 0.55), 0 0 8px rgba(255, 159, 67, 0.45); }
+  50%      { box-shadow: 0 0 0 4px rgba(255, 159, 67, 0.00), 0 0 14px rgba(255, 159, 67, 0.75); }
+}
+
+/* Sidebar agent dot — red "error" pulse. Faster (1s) and more insistent than the
+   waiting pulse so an error out-ranks a routine active/waiting dot for attention. */
+@keyframes claude-error-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.65), 0 0 8px rgba(248, 81, 73, 0.55); }
+  50%      { box-shadow: 0 0 0 5px rgba(248, 81, 73, 0.00), 0 0 16px rgba(248, 81, 73, 0.90); }
+}
+
+/* Terminal tab status: left-to-right sweeping green when a tab is active */
+@keyframes claude-tab-sweep {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Active ticket card: a continuously flowing rainbow gradient border that
+   signals live, in-progress work. The padding-box fill keeps the card body
+   opaque while the border-box gradient scrolls under `ticket-border-flow`. */
+@keyframes ticket-border-flow {
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 300% 50%; }
+}
+/* Active ticket status line ("실행중…" 등): a bright highlight sweeps the text
+   left→right, lighting each character in turn, so the work reads as running. */
+@keyframes ticket-status-sweep {
+  0%   { background-position: 200% center; }
+  100% { background-position: -100% center; }
+}
+.ticket-status-run {
+  display: inline-block !important;
+  background: linear-gradient(
+    90deg,
+    var(--accent-blue, #58a6ff) 0%,
+    var(--accent-blue, #58a6ff) 30%,
+    #e6f2ff 50%,
+    var(--accent-blue, #58a6ff) 70%,
+    var(--accent-blue, #58a6ff) 100%
+  );
+  background-size: 250% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: ticket-status-sweep 1.8s linear infinite;
+}
+
+.ticket-card--active {
+  border: 1.5px solid transparent !important;
+  background:
+    linear-gradient(var(--bg-secondary, #161b22), var(--bg-secondary, #161b22)) padding-box,
+    linear-gradient(90deg, #58a6ff, #3fb950, #d2a8ff, #f778ba, #ffa657, #58a6ff) border-box !important;
+  background-size: 300% 100% !important;
+  animation: ticket-border-flow 3.2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Motion-sensitive users get a static blue border instead of the flow. */
+  .ticket-card--active {
+    animation: none !important;
+    background: var(--bg-secondary, #161b22) !important;
+    border: 1.5px solid var(--accent-blue, #58a6ff) !important;
+  }
+  .ticket-status-run {
+    animation: none !important;
+    background: none !important;
+    -webkit-text-fill-color: var(--accent-blue, #58a6ff) !important;
+    color: var(--accent-blue, #58a6ff) !important;
+  }
+  /* Fall back to a static green tint for motion-sensitive users */
+  [style*="claude-tab-sweep"] {
+    animation: none !important;
+    background: rgba(46, 160, 67, 0.22) !important;
+  }
+  [style*="claude-waiting-pulse"] {
+    animation: none !important;
+    box-shadow: 0 0 8px rgba(255, 159, 67, 0.55) !important;
+  }
+  [style*="claude-error-pulse"] {
+    animation: none !important;
+    box-shadow: 0 0 10px rgba(248, 81, 73, 0.75) !important;
+  }
+}
+
+/* Keyboard focus. Inline styles dominate the views, so there is nowhere per
+   component to put this — a single global rule is the only place it survives.
+   :focus-visible keeps it off mouse clicks. */
+:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+/* The UA's default ring would otherwise double up with the one above. */
+:focus:not(:focus-visible) {
+  outline: none;
+}

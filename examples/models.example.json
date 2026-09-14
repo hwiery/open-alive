@@ -1,0 +1,35 @@
+{
+  "$comment": "Copy to ~/.open-alive/models.json and use the model ids YOUR gateway serves (GET <base>/v1/models). `open-alive setup` can generate this file. kind: reasoning | fast | code | utility.",
+  "defaultModel": "fast-model",
+  "panelModels": ["reasoning-model-a", "reasoning-model-b", "code-model"],
+  "models": [
+    {
+      "id": "fast-model",
+      "aliases": ["fast", "lite"],
+      "kind": "fast",
+      "note": "cheap and fast — bulk classify / summarize / extract",
+      "fallbacks": ["reasoning-model-a"]
+    },
+    {
+      "id": "reasoning-model-a",
+      "aliases": ["pro"],
+      "kind": "reasoning",
+      "note": "hard reasoning, long analysis",
+      "fallbacks": ["reasoning-model-b", "fast-model"]
+    },
+    {
+      "id": "reasoning-model-b",
+      "aliases": ["second"],
+      "kind": "reasoning",
+      "note": "second opinion from another vendor",
+      "fallbacks": ["reasoning-model-a", "fast-model"]
+    },
+    {
+      "id": "code-model",
+      "aliases": ["code"],
+      "kind": "code",
+      "note": "code and agentic work",
+      "fallbacks": ["reasoning-model-a"]
+    }
+  ]
+}

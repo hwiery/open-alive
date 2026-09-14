@@ -1,0 +1,102 @@
+/**
+ * Main-agent prompt assembly for tickets (spec 2026-07-22 §5).
+ *
+ * Extracted from index.ts so the learned-guide prefix and the mandatory HEADLINE
+ * suffix live in one testable place. When `guideText` is empty the output is
+ * byte-identical to the original inline prompt — no behaviour change for routes
+ * with nothing learned yet.
+ */
+import { describeDelegateModels } from './orchestrator/delegateModels.js';
+
+/**
+ * The mandatory trailing instruction. The agent ends with exactly one of two
+ * markers: HEADLINE when the goal is done, or DECISION when it needs a human
+ * choice to continue (parsed by extractHeadline / extractDecision).
+ *
+ * The one-question rule on DECISION is not style. A DECISION carrying three
+ * questions ("①…②…③… — 3건 선택 필요") cannot be answered with one label, so
+ * both the advisory panel and the human end up replying in prose that maps to no
+ * option at all. Asking the first question alone costs an extra round and makes
+ * every later answer machine-readable.
+ *
+ * Neither is the consequences rule. Of the decisions a human actually answered,
+ * only 3 of 10 got a choice back; 5 came back as "explain it in more detail"
+ * — and those were exactly the questions that listed options without saying what
+ * picking one would do. The advisors see even less than the human does, so a
+ * question a person cannot answer is one the panel can only guess at.
+ */
+export const HEADLINE_INSTRUCTION =
+  '\n\n---\n작업을 마친 뒤, 마지막 줄에 반드시 아래 중 하나만 출력하세요 (다른 말 없이):\n' +
+  '- 목표를 끝냈으면:  HEADLINE: <핵심 결과 30자 이내 한 줄>\n' +
+  '- 사람의 결정·선택이 있어야 더 진행할 수 있으면:  DECISION: <무엇을 정해야 하는지와 선택지를 한 줄로>\n' +
+  'DECISION 규칙:\n' +
+  '- 한 번에 하나만 묻습니다. 정해야 할 것이 여러 건이면 뒤의 결정을 좌우하는 하나만 묻고, 나머지는 답을 받은 뒤 다시 묻습니다.\n' +
+  '- 선택지는 1. 2. 3. 으로 번호를 붙이고, 숫자 하나로 답할 수 있게 씁니다.\n' +
+  '- 선택지마다 「고르면 무엇이 일어나는지」와 「되돌릴 수 있는지」를 한 줄로 덧붙입니다. ' +
+  '읽는 사람이 되물어야 한다면 그 질문은 아직 답할 수 없는 질문입니다.\n' +
+  '- 스스로 확인할 수 있는 것은 묻지 말고 확인하세요. 사람만 아는 의도·권한·우선순위일 때만 묻습니다.';
+
+/**
+ * Commit instruction for tickets the server cannot commit itself.
+ *
+ * A local ticket is committed by the server the moment its verification gate
+ * turns green — a deterministic step the agent has no say in. A ticket running
+ * over SSH produces its changes on the remote host, where the server has no
+ * hands, so there the agent is asked to commit instead. It is the weaker
+ * arrangement (the agent is the party under review, and it can forget), which is
+ * why it is used only where the strong one is impossible.
+ */
+export const REMOTE_COMMIT_INSTRUCTION =
+  '\n\n---\n이 작업은 원격 호스트에서 실행됩니다. 파일을 변경했다면 마지막 마커를 출력하기 전에 ' +
+  '변경분을 반드시 커밋하세요 (push 는 하지 마세요):\n' +
+  '- `git add -A -- .` 후 `git commit -m "<type>: <한글 설명> / <English description>"`\n' +
+  '- 변경이 없거나 git 저장소가 아니면 커밋하지 않습니다.\n' +
+  '- 커밋했다면 결과 본문에 커밋 해시를 한 줄로 남기세요.';
+
+export interface MainPromptOptions {
+  /** Append {@link REMOTE_COMMIT_INSTRUCTION}. Used for remote (ssh) tickets only. */
+  askToCommit?: boolean;
+}
+
+export function buildMainPrompt(goal: string, guideText = '', opts: MainPromptOptions = {}): string {
+  const prefix = guideText.trim() ? `${guideText.trim()}\n\n---\n` : '';
+  const commit = opts.askToCommit ? REMOTE_COMMIT_INSTRUCTION : '';
+  return `${prefix}${goal}${commit}${HEADLINE_INSTRUCTION}`;
+}
+
+/**
+ * Orchestrator prompt (spec §5). Claude leads the work but may delegate subtasks
+ * to a faster/cheaper sub-agent by running the `oa-delegate` tool, then decides
+ * with the same HEADLINE/DECISION contract. `delegateCmd` is the absolute path
+ * to the delegation CLI (embedded so the agent can call it directly).
+ *
+ * `model` is passed in rather than hardcoded: the gateway retires model ids, and
+ * a stale id baked into the prompt made every delegation fail with HTTP 400.
+ *
+ * The menu is listed in full because an orchestrator told about one model uses
+ * one model — the point of a dozen backends is picking per subtask (code → kimi,
+ * second opinion → grok, bulk extraction → flash-lite).
+ */
+export function buildOrchestratorPrompt(
+  goal: string,
+  guideText: string,
+  delegateCmd: string,
+  model: string,
+  opts: MainPromptOptions = {},
+): string {
+  const prefix = guideText.trim() ? `${guideText.trim()}\n\n---\n` : '';
+  const orchestration =
+    '너는 오케스트레이터다. 목표를 직접 수행하되, 무겁거나 병렬화 가능하거나 다른 관점이 필요한 ' +
+    '하위 작업은 서브에이전트에 위임할 수 있다. 위임 방법(Bash로 실행):\n' +
+    `  ${delegateCmd} --model <모델> "<하위 작업 프롬프트>"\n` +
+    '쓸 수 있는 모델 (별칭·전체 id 둘 다 인식):\n' +
+    `${describeDelegateModels()}\n` +
+    `모델을 생략하면 ${model}. 여러 개를 "a,b" 로 넘기면 앞에서부터 순서대로 시도한다.\n` +
+    '한도 소진(429)·오류가 나면 자동으로 다음 대체 모델로 넘어가며, 실제로 답한 모델은 stderr JSON의 ' +
+    '"model" 필드에 있다 — 교차검증처럼 특정 모델의 의견이어야 의미가 있는 경우엔 --no-fallback 을 붙여 대체를 막아라.\n' +
+    `  ${delegateCmd} --list-models   # 모델 목록과 현재 쿨다운 상태\n` +
+    '서브에이전트의 답변이 stdout으로 반환된다. 여러 번/여러 모델로 위임하고 결과를 종합해 판단하라. ' +
+    '위임이 불필요하면 직접 처리해도 된다.\n\n---\n';
+  const commit = opts.askToCommit ? REMOTE_COMMIT_INSTRUCTION : '';
+  return `${prefix}${orchestration}목표: ${goal}${commit}${HEADLINE_INSTRUCTION}`;
+}

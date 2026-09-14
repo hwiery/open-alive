@@ -1,0 +1,243 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { repoIdFor } from '@open-alive/core/runs/repoId';
+import { createRunStore, type RunStore } from '../runStore.js';
+import type { ResolvedLocation } from '../gitResolver.js';
+
+const LOC: ResolvedLocation = {
+  repository: { repoId: 'r1', root: '/r/proj', name: 'proj', isGit: true },
+  worktree: { worktreeId: 'w1', repoId: 'r1', path: '/r/proj', branch: 'main', isPrimary: true },
+};
+
+let dir: string;
+let store: RunStore;
+
+beforeEach(async () => {
+  dir = await mkdtemp(join(tmpdir(), 'runstore-'));
+  store = createRunStore({ file: join(dir, 'runs.json') });
+  await store.load();
+});
+
+afterEach(async () => {
+  await rm(dir, { recursive: true, force: true });
+});
+
+function upsert(over: Partial<Parameters<RunStore['upsert']>[0]> = {}) {
+  return store.upsert({
+    runId: 'run-1',
+    location: LOC,
+    kind: 'ticket',
+    sourceId: 't-1',
+    title: '위임 모델 확장',
+    state: 'running',
+    startedAt: 1000,
+    ...over,
+  });
+}
+
+describe('runStore', () => {
+  it('registers the repository and worktree along with the run', () => {
+    upsert();
+    const tree = store.tree();
+    expect(tree.repositories).toHaveLength(1);
+    expect(tree.worktrees).toHaveLength(1);
+    expect(tree.runs[0]?.title).toBe('위임 모델 확장');
+  });
+
+  it('does not duplicate the repository across runs in one worktree', () => {
+    upsert({ runId: 'run-1' });
+    upsert({ runId: 'run-2', sourceId: 't-2' });
+    expect(store.tree().repositories).toHaveLength(1);
+    expect(store.tree().runs).toHaveLength(2);
+  });
+
+  it('close records the outcome and stamps closedAt', () => {
+    upsert();
+    const closed = store.close('run-1', '폴백 경로 검증 완료');
+    expect(closed?.state).toBe('closed');
+    expect(closed?.outcome).toBe('폴백 경로 검증 완료');
+    expect(closed?.closedAt).toBeGreaterThan(0);
+  });
+
+  it('abandon marks the run without an outcome', () => {
+    upsert();
+    const gone = store.abandon('run-1');
+    expect(gone?.state).toBe('abandoned');
+    expect(gone?.outcome).toBeUndefined();
+  });
+
+  it('a later adapter report never reopens a closed run', () => {
+    upsert();
+    store.close('run-1', 'done');
+    upsert({ state: 'running' });
+    expect(store.tree().runs[0]?.state).toBe('closed');
+    expect(store.tree().runs[0]?.outcome).toBe('done');
+  });
+
+  it('an adapter report still refreshes the title and meta of an open run', () => {
+    upsert();
+    upsert({ title: '제목 변경', state: 'waiting', meta: { model: 'opus', costUsd: 0.42 } });
+    const run = store.tree().runs[0];
+    expect(run?.title).toBe('제목 변경');
+    expect(run?.state).toBe('waiting');
+    expect(run?.meta?.costUsd).toBe(0.42);
+  });
+
+  it('notifies subscribers on upsert and close', () => {
+    const seen = vi.fn();
+    store.subscribe(seen);
+    upsert();
+    store.close('run-1', 'ok');
+    expect(seen).toHaveBeenCalledTimes(2);
+  });
+
+  it('close on an unknown run returns null', () => {
+    expect(store.close('nope', 'x')).toBeNull();
+  });
+
+  it('persists and reloads the tree', async () => {
+    upsert();
+    store.close('run-1', '기록됨');
+    await store.flush();
+
+    const reopened = createRunStore({ file: join(dir, 'runs.json') });
+    await reopened.load();
+    expect(reopened.tree().runs[0]?.outcome).toBe('기록됨');
+    expect(reopened.tree().repositories[0]?.root).toBe('/r/proj');
+  });
+
+  it('starts empty when the file is missing or corrupt', async () => {
+    const fresh = createRunStore({ file: join(dir, 'missing.json') });
+    await fresh.load();
+    expect(fresh.tree().runs).toEqual([]);
+  });
+  it('records a touched file and broadcasts it', () => {
+    upsert();
+    const next = store.recordTouchedFile('run-1', '/r/proj/a.ts');
+    expect(next?.touchedFiles).toEqual(['/r/proj/a.ts']);
+  });
+
+  it('does not re-broadcast a path it already has', () => {
+    upsert();
+    const seen = vi.fn();
+    store.recordTouchedFile('run-1', '/r/proj/a.ts');
+    store.subscribe(seen);
+    store.recordTouchedFile('run-1', '/r/proj/a.ts');
+    expect(seen).not.toHaveBeenCalled();
+  });
+
+  it('keeps touched files across a later adapter report', () => {
+    upsert();
+    store.recordTouchedFile('run-1', '/r/proj/a.ts');
+    upsert({ title: '갱신' });
+    expect(store.tree().runs[0]?.touchedFiles).toEqual(['/r/proj/a.ts']);
+  });
+
+  it('defaults last activity to the start when the adapter reports none', () => {
+    expect(upsert().lastActivityAt).toBe(1000);
+  });
+
+  it('takes the adapter last-activity time when it is newer', () => {
+    upsert();
+    expect(upsert({ lastActivityAt: 5000 }).lastActivityAt).toBe(5000);
+  });
+
+  it('never lets a stale adapter report move last activity backwards', () => {
+    upsert({ lastActivityAt: 5000 });
+    expect(upsert({ lastActivityAt: 2000 }).lastActivityAt).toBe(5000);
+  });
+
+  it('close does not restamp last activity — filing is not work', () => {
+    upsert({ lastActivityAt: 5000 });
+    const closed = store.close('run-1', '완료');
+    expect(closed?.lastActivityAt).toBe(5000);
+    expect(closed?.closedAt).toBeGreaterThan(5000);
+  });
+
+  it('abandon does not restamp last activity either', () => {
+    upsert({ lastActivityAt: 5000 });
+    expect(store.abandon('run-1')?.lastActivityAt).toBe(5000);
+  });
+
+  it('a touched file counts as activity', () => {
+    upsert({ lastActivityAt: 5000 });
+    const next = store.recordTouchedFile('run-1', '/r/proj/a.ts');
+    expect(next?.lastActivityAt).toBeGreaterThan(5000);
+  });
+
+  it('remove deletes the run', () => {
+    upsert();
+    expect(store.remove('run-1')).toBe(true);
+    expect(store.tree().runs).toHaveLength(0);
+  });
+
+  it('remove does not notify run subscribers — that channel would re-add it', () => {
+    upsert();
+    const seen: string[] = [];
+    store.subscribe((r) => seen.push(r.runId));
+    store.remove('run-1');
+    expect(seen).toEqual([]);
+  });
+
+  it('remove is persisted', async () => {
+    upsert();
+    store.remove('run-1');
+    await store.flush();
+    const reloaded = createRunStore({ file: join(dir, 'runs.json') });
+    await reloaded.load();
+    expect(reloaded.tree().runs).toHaveLength(0);
+  });
+
+  it('remove keeps the repository and worktree — other runs may still need them', () => {
+    upsert();
+    store.remove('run-1');
+    expect(store.tree().repositories).toHaveLength(1);
+    expect(store.tree().worktrees).toHaveLength(1);
+  });
+
+  it('remove on an unknown run returns false', () => {
+    expect(store.remove('nope')).toBe(false);
+  });
+
+  it('recording on an unknown run returns null', () => {
+    expect(store.recordTouchedFile('nope', '/a')).toBeNull();
+  });
+});
+
+describe('backfillLocations', () => {
+  const SSH = { kind: 'ssh' as const, ssh: { host: '10.0.0.2', user: 'dev' }, label: 'dev' };
+
+  /** A store whose file already holds pre-location records. */
+  async function seeded(repositories: unknown[]): Promise<RunStore> {
+    const file = join(await mkdtemp(join(tmpdir(), 'runs-')), 'runs.json');
+    await writeFile(file, JSON.stringify({ repositories, worktrees: [], runs: [] }), 'utf-8');
+    const store = createRunStore({ file });
+    await store.load();
+    return store;
+  }
+
+  it('adopts a host only for repositories whose id reproduces under it', async () => {
+    const remoteId = repoIdFor('/srv/app', 'ssh:dev@10.0.0.2');
+    const localId = repoIdFor('/r/alive');
+    const store = await seeded([
+      { repoId: remoteId, root: '/srv/app', name: 'app', isGit: true },
+      { repoId: localId, root: '/r/alive', name: 'alive', isGit: true },
+    ]);
+
+    expect(store.backfillLocations([SSH])).toBe(1);
+    const repos = store.tree().repositories;
+    expect(repos.find((r) => r.repoId === remoteId)?.location).toEqual(SSH);
+    expect(repos.find((r) => r.repoId === localId)?.location).toBeUndefined();
+  });
+
+  it('leaves an already-located repository alone and reports nothing to do', async () => {
+    const remoteId = repoIdFor('/srv/app', 'ssh:dev@10.0.0.2');
+    const store = await seeded([
+      { repoId: remoteId, root: '/srv/app', name: 'app', isGit: true, location: SSH },
+    ]);
+    expect(store.backfillLocations([SSH])).toBe(0);
+    expect(store.backfillLocations([])).toBe(0);
+  });
+});

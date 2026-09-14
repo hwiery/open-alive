@@ -1,0 +1,142 @@
+#!/bin/bash
+# Build the single npm package (open-alive)
+# Bundles CLI + server + core + hooks into self-contained files.
+set -e
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+OUT="$ROOT/npm-dist"
+VERSION=$(node -p "require('$ROOT/package.json').version")
+REPO_URL=$(node -p "require('$ROOT/package.json').repository.url")
+HOMEPAGE=$(node -p "require('$ROOT/package.json').homepage")
+
+echo "Building open-alive v$VERSION"
+echo ""
+echo "[1/6] Building all packages..."
+pnpm build
+
+echo "[2/6] Cleaning npm-dist..."
+rm -rf "$OUT"
+mkdir -p "$OUT/dist" "$OUT/scripts" "$OUT/ui"
+
+# pino (absorbed via prompt-core in D-048) uses dynamic require() of node: builtins
+# and transport workers at runtime — esbuild can't statically resolve those when
+# bundling to ESM, so the bundled output throws "Dynamic require of 'node:os'".
+# Mark pino + its runtime-resolved deps external so Node loads them from
+# node_modules at install time. They must also be listed under `dependencies` in
+# the generated package.json below.
+# All runtime deps that either (a) ship native bindings or (b) use dynamic require()
+# at runtime are externalized here. When prompt-* packages were absorbed in D-048
+# the server bundle suddenly pulled in pino/fastify/better-sqlite3/franc-min — none
+# of which survive esbuild ESM bundling. Externalizing keeps the bundle small and
+# defers loading to install-time `node_modules`.
+EXTERNAL_FLAGS="--external:ws --external:node-pty --external:better-sqlite3 --external:pino --external:pino-* --external:thread-stream --external:sonic-boom --external:on-exit-leak-free --external:real-require --external:atomic-sleep --external:safe-stable-stringify --external:fast-redact --external:quick-format-unescaped --external:process-warning --external:fastify --external:@fastify/* --external:franc-min --external:trigram-utils --external:n-gram --external:collapse-white-space --external:commander --external:picocolors --external:zod"
+
+# Bundle the SAME CLI source the workspace uses (packages/cli/src/index.ts).
+# The CLI auto-detects whether the server entry lives at the workspace path
+# (../../server/dist/index.js) or alongside it as a sibling bundle (./server.js),
+# so a single source supports both `pnpm dev` link and the npm-published bundle.
+# Removes the prior duplication in npm/cli-entry.ts that caused PR #21 to leak.
+echo "[3/6] Bundling CLI..."
+npx esbuild "$ROOT/packages/cli/src/index.ts" \
+  --bundle --platform=node --format=esm \
+  --target=node20 --outfile="$OUT/dist/cli.js" \
+  $EXTERNAL_FLAGS
+
+echo "[4/6] Bundling server..."
+npx esbuild "$ROOT/npm/server-entry.ts" \
+  --bundle --platform=node --format=esm \
+  --target=node20 --outfile="$OUT/dist/server.js" \
+  $EXTERNAL_FLAGS
+
+# The orchestrator's sub-agent tool. `ensureDelegateCli()` writes a
+# ~/.open-alive/bin/oa-delegate wrapper that execs `node <dist>/delegateCli.js`
+# — a sibling of the server bundle. Without this entry that file never existed in
+# the published package and every delegation died with "Cannot find module".
+echo "[5/6] Bundling oa-delegate CLI..."
+npx esbuild "$ROOT/packages/server/src/orchestrator/delegateCli.ts" \
+  --bundle --platform=node --format=esm \
+  --target=node20 --outfile="$OUT/dist/delegateCli.js" \
+  $EXTERNAL_FLAGS
+
+echo "[6/6] Copying assets..."
+cp "$ROOT/packages/hooks/scripts/stream-event.sh" "$OUT/scripts/"
+cp -r "$ROOT/packages/ui/dist/." "$OUT/ui/"
+cp "$ROOT/LICENSE" "$OUT/"
+cp "$ROOT/README.md" "$OUT/"
+cp "$ROOT/.env.example" "$OUT/env.example"
+mkdir -p "$OUT/examples" && cp "$ROOT"/examples/*.json "$OUT/examples/"
+
+# Bundle efficio (pure-stdlib python — no numpy). The server spawns
+# `python3 -m efficio collect` from the package root on session end, so the
+# package needs the source tree (sources only; tests/__pycache__ excluded).
+mkdir -p "$OUT/efficio"
+cp "$ROOT"/efficio/*.py "$OUT/efficio/"
+cp "$ROOT/efficio/README.md" "$OUT/efficio/"
+
+# Create package.json for npm
+cat > "$OUT/package.json" << PKGJSON
+{
+  "name": "open-alive",
+  "version": "$VERSION",
+  "description": "Real-time dashboard and ticket runner for Claude Code sessions, powered by hooks",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "open-alive": "./cli.js"
+  },
+  "files": [
+    "cli.js",
+    "dist/",
+    "scripts/",
+    "ui/",
+    "efficio/",
+    "examples/",
+    "env.example",
+    "LICENSE",
+    "README.md"
+  ],
+  "dependencies": {
+    "ws": "^8",
+    "node-pty": "1.2.0-beta.11",
+    "better-sqlite3": "^11.7.0",
+    "pino": "^9.5.0",
+    "fastify": "^5.12.1",
+    "franc-min": "^6.2.0",
+    "commander": "^12.1.0",
+    "picocolors": "^1.1.1",
+    "zod": "^4.3.6"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "$REPO_URL"
+  },
+  "homepage": "$HOMEPAGE",
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "agent",
+    "monitoring",
+    "dashboard",
+    "hooks",
+    "realtime",
+    "websocket"
+  ]
+}
+PKGJSON
+
+# Create top-level bin wrapper (npm 11 rejects paths with '/')
+cat > "$OUT/cli.js" << 'CLIWRAP'
+#!/usr/bin/env node
+import './dist/cli.js';
+CLIWRAP
+chmod +x "$OUT/cli.js"
+
+echo ""
+echo "Done! Package ready at: $OUT"
+echo "To publish: cd npm-dist && npm publish"
