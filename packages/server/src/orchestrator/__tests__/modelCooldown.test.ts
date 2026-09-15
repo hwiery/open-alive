@@ -61,7 +61,11 @@ describe('createCooldownStore', () => {
   });
 
   it('never throws when the file cannot be written', () => {
-    const store = createCooldownStore('/proc/nonexistent-dir/cooldowns.json', () => 0);
+    // A regular file used as the parent directory fails with ENOTDIR on every OS.
+    // (A path under /proc hangs recursive mkdir on Linux instead of failing.)
+    const parentIsFile = tmpFile();
+    writeFileSync(parentIsFile, '{}');
+    const store = createCooldownStore(join(parentIsFile, 'sub', 'cooldowns.json'), () => 0);
     expect(() => store.record('glm-5.2', 60_000)).not.toThrow();
   });
 });
