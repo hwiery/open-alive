@@ -132,7 +132,7 @@ All settings are optional and live in `~/.open-alive/.env` (`KEY=VALUE` per line
 | `LITELLM_BASE_URL` | `http://localhost:4000` | OpenAI-compatible gateway for sub-agent delegation and review panels |
 | `LITELLM_KEY` | — | Gateway key. Without it, tickets run without delegation or panels |
 | `OA_DELEGATE_MODEL` | from `models.json` | Default model for `oa-delegate` |
-| `OA_DELEGATE_MODELS_FILE` | `~/.open-alive/models.json` | Model catalogue (`builtin` = the shipped example preset) |
+| `OA_DELEGATE_MODELS_FILE` | `~/.open-alive/models.json` | Model catalogue (`builtin` = a built-in preset of public vendor model ids — only useful if your gateway serves those ids) |
 | `OA_PANEL_MODELS` | from `models.json` | Comma-separated review-panel roster |
 
 ### Model catalogue (`models.json`) / 모델 카탈로그
@@ -152,11 +152,14 @@ When a gateway is configured, the ticket orchestrator can delegate subtasks with
 A model that is rate-limited (HTTP 429) or retired falls back to the next one in its chain; the window is remembered in `~/.open-alive/delegate-cooldowns.json`.
 한도 초과(429)나 폐기된 모델은 체인의 다음 모델로 넘어가고, 재개 시각을 기억해 다음 호출에서 건너뜁니다.
 
+The wrapper is written on the first `open-alive start` and is not on your `PATH`; call it by its full path.
+래퍼는 첫 `open-alive start` 때 생성되며 `PATH`에 없으므로 전체 경로로 호출합니다.
+
 ```bash
-oa-delegate --list-models                  # catalogue + cooldown state
-oa-delegate --model fast "<prompt>"        # alias or full id
-oa-delegate --model a,b "<prompt>"         # explicit chain
-oa-delegate --model a --no-fallback "…"    # pin one model (cross-checks)
+~/.open-alive/bin/oa-delegate --list-models                  # catalogue + cooldown state
+~/.open-alive/bin/oa-delegate --model fast "<prompt>"        # alias or full id
+~/.open-alive/bin/oa-delegate --model a,b "<prompt>"         # explicit chain
+~/.open-alive/bin/oa-delegate --model a --no-fallback "…"    # pin one model (cross-checks)
 ```
 
 ---

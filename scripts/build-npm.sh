@@ -18,14 +18,14 @@ echo "[2/6] Cleaning npm-dist..."
 rm -rf "$OUT"
 mkdir -p "$OUT/dist" "$OUT/scripts" "$OUT/ui"
 
-# pino (absorbed via prompt-core in D-048) uses dynamic require() of node: builtins
+# pino (pulled in via prompt-core) uses dynamic require() of node: builtins
 # and transport workers at runtime — esbuild can't statically resolve those when
 # bundling to ESM, so the bundled output throws "Dynamic require of 'node:os'".
 # Mark pino + its runtime-resolved deps external so Node loads them from
 # node_modules at install time. They must also be listed under `dependencies` in
 # the generated package.json below.
 # All runtime deps that either (a) ship native bindings or (b) use dynamic require()
-# at runtime are externalized here. When prompt-* packages were absorbed in D-048
+# at runtime are externalized here. Since the prompt-* packages run inside the server,
 # the server bundle suddenly pulled in pino/fastify/better-sqlite3/franc-min — none
 # of which survive esbuild ESM bundling. Externalizing keeps the bundle small and
 # defers loading to install-time `node_modules`.
@@ -35,7 +35,7 @@ EXTERNAL_FLAGS="--external:ws --external:node-pty --external:better-sqlite3 --ex
 # The CLI auto-detects whether the server entry lives at the workspace path
 # (../../server/dist/index.js) or alongside it as a sibling bundle (./server.js),
 # so a single source supports both `pnpm dev` link and the npm-published bundle.
-# Removes the prior duplication in npm/cli-entry.ts that caused PR #21 to leak.
+# Keeping one CLI source avoids the two entry points drifting apart.
 echo "[3/6] Bundling CLI..."
 npx esbuild "$ROOT/packages/cli/src/index.ts" \
   --bundle --platform=node --format=esm \

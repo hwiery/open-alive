@@ -10,7 +10,7 @@ import {
 } from '../sshExecutor.js';
 import type { HeadlessProcessHandle } from '../../headlessClaude.js';
 
-const TARGET: SshTarget = { host: '192.168.100.99', user: 'dev' };
+const TARGET: SshTarget = { host: '192.0.2.20', user: 'dev' };
 
 /** A fake process that emits `stdoutText` then exits with `code`. */
 function fakeProc(stdoutText: string, code = 0): HeadlessProcessHandle {
@@ -77,7 +77,7 @@ describe('createSshExecutor.spawn', () => {
       'export PATH="$HOME/.local/bin:$HOME/.claude/local:/opt/homebrew/bin:/usr/local/bin:$PATH"; ' +
         "cd '/srv/app' && claude -p --output-format stream-json --verbose --permission-mode bypassPermissions",
     );
-    expect(capturedArgs).toContain('dev@192.168.100.99');
+    expect(capturedArgs).toContain('dev@192.0.2.20');
     // stream-json parsed the same as the local path
     expect(outcome.result?.result).toBe('done');
     expect(outcome.sessionId).toBe('s1');
@@ -97,7 +97,7 @@ describe('createSshExecutor.validateCwd', () => {
     const ex = createSshExecutor(TARGET, { spawnProcess });
     const err = await ex.validateCwd('/nope');
     expect(err).toContain('/nope');
-    expect(err).toContain('192.168.100.99');
+    expect(err).toContain('192.0.2.20');
   });
 
   it('runs a test -d probe with the quoted cwd', async () => {

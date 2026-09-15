@@ -540,7 +540,7 @@
     "sshHosts": "SSH hosts",
     "sshHostsHint": "Hosts registered here become selectable as a ticket 'location' (run remotely). The remote host must have claude installed and authenticated.",
     "sshLabel": "Name (optional)",
-    "sshHost": "Host (e.g. 192.168.100.99)",
+    "sshHost": "Host (e.g. 192.0.2.20)",
     "sshUser": "User (e.g. dev)",
     "sshAdd": "Add host",
     "remove": "Remove"

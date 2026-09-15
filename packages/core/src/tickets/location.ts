@@ -24,7 +24,7 @@ export interface TicketLocation {
   label?: string;
 }
 
-/** `dev@192.168.100.99` / `192.168.100.99:2222` — a compact target for the UI. */
+/** `dev@192.0.2.20` / `192.0.2.20:2222` — a compact target for the UI. */
 export function sshTargetDisplay(t: SshTarget): string {
   const at = t.user ? `${t.user}@${t.host}` : t.host;
   return t.port && t.port !== 22 ? `${at}:${t.port}` : at;

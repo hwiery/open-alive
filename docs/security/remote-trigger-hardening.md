@@ -38,7 +38,7 @@
 
 ## 2. 현재 상태 점검 결과 (실측 2026-09-09)
 
-측정: 실행 중 서버(PID 71842, `*:3141` 바인딩). 동일 호스트의 **LAN IP(192.168.100.56)**로 요청 → 원격 클라이언트를 재현.
+측정: 실행 중 서버(`*:3141` 바인딩). 동일 호스트의 **LAN IP(192.0.2.10)**로 요청 → 원격 클라이언트를 재현.
 
 ### 2.1 바인딩
 - `httpServer.listen(PORT)` — host 인자 없음(`index.ts:1040`). Node 기본값은 미지정 시 전 인터페이스. `lsof`로 `node ... TCP *:3141 (LISTEN)` 확인.
@@ -71,7 +71,7 @@
 
 ### 2.3 WebSocket (`/ws`)
 - Origin **미전송** → `OPEN`. 즉시 `snapshot`/`run:snapshot`/`ticket:snapshot`/`system:usage`/`v2:catalog-changed`/`system:metrics` 수신(모든 세션 데이터).
-- Origin `http://192.168.100.56:3141`(원격 호스트) → 소켓 종료. Origin 검사(`wsOrigin.ts`)는 loopback 호스트명만 허용.
+- Origin `http://192.0.2.10:3141`(원격 호스트) → 소켓 종료. Origin 검사(`wsOrigin.ts`)는 loopback 호스트명만 허용.
 - **매우 중요**: WS에는 `isLoopbackRequest` 게이트가 없다. `wsClientSchema`에 `terminal:spawn`(mode `shell`/`claude`, `initialCommand`, `skipPermissions`)이 있고 핸들러(index.ts:869)에도 어떤 인증 검사가 없다. Origin을 보내지 않는 네이티브 클라이언트는 LAN에서 붙어 **원격 PTY 스폰·임의 명령 실행**이 가능하다. 티켓 API 403보다 심각하다.
 
 ### 2.4 근거 파일
@@ -291,7 +291,7 @@ rev1은 서버 하드닝만 다뤘다. 현재 UI에 `Authorization`/토큰 관�
 
 ## 10. 구현 결과와 수정 후 실측 (2026-09-09)
 
-측정 방법: 빌드된 서버를 격리 HOME·포트 3199 로 기동, 같은 LAN IP(192.168.100.56)로 요청. §2 와 동일 조건.
+측정 방법: 빌드된 서버를 격리 HOME·포트 3199 로 기동, 같은 LAN IP(192.0.2.10)로 요청. §2 와 동일 조건.
 
 ### 10.1 부팅
 | 조건 | 결과 |

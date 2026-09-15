@@ -68,10 +68,10 @@ describe('MobileTicketDetail — desktop parity', () => {
     expect(screen.getByText(/로컬|Local/)).toBeInTheDocument();
     rerender(
       <MobileTicketDetail
-        {...props(base({ location: { kind: 'ssh', ssh: { host: '192.168.100.99', user: 'dev' } } as never }))}
+        {...props(base({ location: { kind: 'ssh', ssh: { host: '192.0.2.20', user: 'dev' } } as never }))}
       />,
     );
-    expect(screen.getByText(/dev@192\.168\.100\.99/)).toBeInTheDocument();
+    expect(screen.getByText(/dev@192\.0\.2\.20/)).toBeInTheDocument();
   });
 
   it('goes back from an icon, not a labelled button', () => {

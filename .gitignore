@@ -6,6 +6,7 @@ npm-dist/
 .DS_Store
 .env
 .env.*
+!.env.example
 
 /output/
 # Efficio 영속 저장소(세션 제목·경로 포함) 및 파이썬 캐시
