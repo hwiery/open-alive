@@ -10,6 +10,10 @@ export default defineConfig({
       'packages/cli/vitest.config.ts',
       'packages/ui/vitest.config.ts',
       'packages/i18n/vitest.config.ts',
+      'packages/prompt-core/vitest.config.ts',
+      'packages/prompt-rules/vitest.config.ts',
+      'packages/prompt-worker/vitest.config.ts',
+      'packages/prompt-agent/vitest.config.ts',
     ],
   },
 });

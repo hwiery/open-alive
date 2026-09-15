@@ -10,7 +10,7 @@ Thanks for your interest! / 관심 가져주셔서 감사합니다!
 
 ## Development setup / 개발 환경
 
-Requirements / 필요 도구: Node.js ≥ 20, pnpm ≥ 10, git. Python 3 is optional (Efficio).
+Requirements / 필요 도구: Node.js ≥ 20 (LTS 20/22/24 recommended / LTS 권장), pnpm ≥ 10, git. Python 3 is optional (Efficio).
 
 ```bash
 git clone <your-fork-url> open-alive

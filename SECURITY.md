@@ -55,7 +55,10 @@ Turning it on changes the model rather than widening it:
   proxy — `ssh -L`, `cloudflared`, any reverse proxy — makes a remote request
   arrive as `127.0.0.1`, so with remote mode on every caller presents a token,
   whatever address it appears to come from. `OPEN_ALIVE_TRUST_LOOPBACK=1`
-  restores the old behaviour for setups where nothing proxies to the port
+  restores the old behaviour for setups where nothing proxies to the port.
+  It also turns off the DNS-rebinding defence for loopback callers: the Host
+  header is only checked in local-only mode, because a tunnel legitimately
+  arrives under another name. Leave it at `0` unless you need it
 - Remote callers reach an allowlist of routes (tickets, status, the project and
   branch listings, the WebSocket stream). Everything else answers 403, including
   any route added later — the list is opt-in
