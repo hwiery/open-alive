@@ -38,6 +38,29 @@ describe('BranchPicker', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it('drops a slow reply for a folder it has since left', async () => {
+    let releaseOld: (value: Response) => void = () => {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        const reply = (branches: unknown) => ({ ok: true, json: async () => ({ branches }) }) as unknown as Response;
+        if (url.includes(encodeURIComponent('/r/old'))) {
+          return new Promise<Response>((resolve) => {
+            releaseOld = () => resolve(reply({ current: 'old-branch', branches: ['old-branch'], dirty: false }));
+          });
+        }
+        return Promise.resolve(reply(CLEAN));
+      }),
+    );
+    const { rerender } = render(<BranchPicker cwd="/r/old" />);
+    rerender(<BranchPicker cwd="/r/proj" />);
+    expect(await screen.findByTestId('branch-select')).toHaveValue('main');
+
+    releaseOld({} as Response);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.getByTestId('branch-select')).toHaveValue('main');
+  });
+
   it('lists local branches with the current one selected', async () => {
     stubFetch({});
     render(<BranchPicker cwd="/r/proj" />);

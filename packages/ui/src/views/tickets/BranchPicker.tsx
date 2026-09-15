@@ -48,8 +48,18 @@ export function BranchPicker({ cwd, onChanged }: BranchPickerProps) {
     setLoaded(false);
     setError(null);
     setCreating(false);
-    void reload(cwd);
-  }, [cwd, reload]);
+    // A response for a folder we have since left (or after unmount) is dropped,
+    // so a slow reply cannot overwrite the current folder's branches.
+    let active = true;
+    void fetchBranches(cwd).then((next) => {
+      if (!active) return;
+      setList(next);
+      setLoaded(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [cwd]);
 
   /** Run one branch operation, then re-read so the row reflects reality. */
   const apply = async (op: () => Promise<BranchResult>) => {
