@@ -46,8 +46,8 @@ Everything runs on your machine. There is no telemetry; the only outbound reques
 | C/C++ build tools | sometimes | only if prebuilt `node-pty` / `better-sqlite3` binaries don't exist for your platform (macOS: `xcode-select --install`, Debian/Ubuntu: `build-essential python3`) |
 | Python 3 | optional | only for the Efficio self-evaluation panel |
 
-Supported: macOS and Linux. Windows is untested (WSL2 is expected to work).
-지원: macOS, Linux. Windows는 미검증입니다 (WSL2 권장).
+Supported: macOS, Linux, and Windows via WSL2 (install and run everything inside the WSL2 distro). Native Windows is **not supported**: the hook is a bash script, and the installer, terminal and Efficio assume a Unix environment. CI runs on macOS and Linux only.
+지원: macOS, Linux, Windows는 WSL2에서만 (설치·실행 모두 WSL2 배포판 안에서). Windows 직접 설치는 **지원하지 않습니다** — 훅이 bash 스크립트이고 설치 스크립트·터미널·Efficio가 Unix 환경을 전제합니다. CI는 macOS·Linux에서만 실행됩니다.
 
 ### Option A — one-shot installer (recommended / 권장)
 
