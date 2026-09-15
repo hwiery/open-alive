@@ -27,6 +27,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { runSetup, resolvePort, writePrivateFile } from './setup.js';
+import { isPortInUse } from './portCheck.js';
 
 const ALIVE_DIR = join(homedir(), '.open-alive');
 const PID_FILE = join(ALIVE_DIR, 'server.pid');
@@ -234,7 +235,7 @@ function openBrowser(url: string): void {
 }
 
 /** Start the server detached and open the dashboard (`start`, and the end of `setup`). */
-function startServer(argv: readonly string[]): void {
+async function startServer(argv: readonly string[]): Promise<void> {
   // `--no-open` skips auto-launching the browser. Default is to open: most
   // users only run `open-alive start` to see the dashboard, so requiring
   // an extra copy-paste step is friction. Power users / CI / headless boxes
@@ -252,6 +253,13 @@ function startServer(argv: readonly string[]): void {
     console.log(`open-alive server is already running (PID: ${existingPid}).`);
     console.log(`  Dashboard: ${url}`);
     if (!noOpen) openBrowser(url);
+    return;
+  }
+  if (await isPortInUse(Number(port))) {
+    console.error(`✗ Port ${port} is already in use by another program.`);
+    console.error('  Stop that program, or pick another port: OPEN_ALIVE_PORT=<port> in ~/.open-alive/.env');
+    console.error('  (re-run "open-alive setup" to change it; hooks read the same file).');
+    process.exitCode = 1;
     return;
   }
   mkdirSync(ALIVE_DIR, { recursive: true });
@@ -336,7 +344,7 @@ switch (command) {
         enableAutostart: () => openAliveAutostart('enable'),
         assumeDefaults,
       });
-      if (result.startNow && !args.includes('--no-start')) startServer(args);
+      if (result.startNow && !args.includes('--no-start')) await startServer(args);
     } catch (error) {
       console.error(`Setup failed: ${error instanceof Error ? error.message : String(error)}`);
       process.exit(1);
@@ -364,7 +372,7 @@ switch (command) {
   }
 
   case 'start': {
-    startServer(args);
+    await startServer(args);
     break;
   }
 

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 72" width="280" height="72" role="img" aria-label="open-alive">
+  <title>open-alive</title>
+  <g transform="translate(4 4) scale(2)">
+    <rect width="32" height="32" rx="7" fill="#0d1117"/>
+    <path d="M25.4 12.6 A10 10 0 1 1 21 7.3" fill="none" stroke="#58a6ff" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M8.5 16.5 H12.5 L14.2 12 L17 21 L18.8 16.5 H23.5" fill="none" stroke="#3fb950" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="24.1" cy="9.2" r="1.9" fill="#3fb950"/>
+  </g>
+  <text x="84" y="46" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace" font-size="30" font-weight="600" fill="#58a6ff">open<tspan fill="#8b949e">-</tspan><tspan fill="#3fb950">alive</tspan></text>
+</svg>

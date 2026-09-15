@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="docs/logo.svg" alt="open-alive" width="280" />
+</p>
+
+<p align="center">
   <h1 align="center">open-alive</h1>
   <p align="center">
     A local, real-time dashboard and ticket runner for Claude Code sessions<br/>
