@@ -263,8 +263,13 @@ export async function runSetup(ctx: SetupContext): Promise<SetupResult> {
     envText = upsertEnvValue(envText, 'OPEN_ALIVE_PORT', port === DEFAULT_PORT ? undefined : port);
 
     if (await prompter.confirm('Register Claude Code hooks in ~/.claude/settings.json? (a .backup copy is kept)', true)) {
-      const result = ctx.installHooks();
-      console.log(`  ✓ hooks registered (${result.settingsPath})`);
+      try {
+        const result = ctx.installHooks();
+        console.log(`  ✓ hooks registered (${result.settingsPath})`);
+      } catch (err) {
+        console.log(`  ✗ ${err instanceof Error ? err.message : String(err)}`);
+        console.log('    then run "open-alive install" to register hooks');
+      }
     } else {
       console.log('  • skipped — run "open-alive install" later to register hooks');
     }

@@ -312,7 +312,13 @@ function cliVersion(): string {
 switch (command) {
   case 'install': {
     console.log('Installing open-alive hooks...');
-    const result = installHooks();
+    let result: ReturnType<typeof installHooks>;
+    try {
+      result = installHooks();
+    } catch (err) {
+      console.error(`  ✗ ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
     console.log(`  ✓ hook script: ${result.hookScriptPath}`);
     console.log(`  ✓ settings:    ${result.settingsPath}`);
     console.log('\nDone! Claude Code will stream events to the unified open-alive server.');

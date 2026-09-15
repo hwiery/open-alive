@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { join, extname, resolve } from 'node:path';
+import { join, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ServerResponse } from 'node:http';
 
@@ -47,7 +47,8 @@ export function createStaticHandler(uiDistPath?: string) {
   return async function serveStatic(pathname: string, res: ServerResponse): Promise<boolean> {
     const distDir = getDistDir();
     const filePath = resolve(distDir, pathname === '/' ? 'index.html' : '.' + pathname);
-    if (!filePath.startsWith(distDir)) return false; // directory traversal blocked
+    // Separator-anchored, so a sibling like `dist-other/` does not pass.
+    if (!filePath.startsWith(distDir.endsWith(sep) ? distDir : distDir + sep)) return false;
 
     try {
       const data = await readFile(filePath);

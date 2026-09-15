@@ -12,9 +12,14 @@ import { listClaudeSessions } from './claudeSessionIndex.js';
 import {
   authorizeRequest,
   createAuthLimiter,
+  type AuthLimiter,
   type RemoteAccessConfig,
 } from './remoteAccess.js';
+import { isCrossSiteRequest } from './httpOrigin.js';
 import type { EfficioReader } from './efficioReader.js';
+import { readServerVersion } from './serverVersion.js';
+
+const SERVER_VERSION = readServerVersion();
 
 // --- Zod schemas for runtime input validation ---
 
@@ -194,6 +199,8 @@ export interface HttpRouterOptions {
    * arrive on loopback, because a tunnel makes remote callers look local.
    */
   remoteAccess?: RemoteAccessConfig;
+  /** Shared with the /ws upgrade so token guesses on either surface count together. */
+  authLimiter?: AuthLimiter;
 
   /**
    * Projects a remote caller may target, drawn from the ticket-root allowlist.
@@ -391,7 +398,7 @@ export function createHttpServer(options: HttpRouterOptions) {
   const accessPolicy = remoteAccess ?? REMOTE_DISABLED;
   // One limiter per server instance: the counter is what makes online token
   // guessing expensive, and it has to outlive individual requests.
-  const authLimiter = createAuthLimiter();
+  const authLimiter = options.authLimiter ?? createAuthLimiter();
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
@@ -400,6 +407,20 @@ export function createHttpServer(options: HttpRouterOptions) {
     // before the gate; it reveals nothing a 401 would not.
     if (req.method === 'OPTIONS') {
       sendJson(res, 204, null, req);
+      return;
+    }
+
+    // Ahead of the access gate: a loopback caller is only "the user" if it is
+    // not a web page acting through the user's browser (see httpOrigin.ts).
+    if (
+      isCrossSiteRequest({
+        headers: req.headers,
+        method: req.method ?? 'GET',
+        pathname: url.pathname,
+        loopbackOnly: !accessPolicy.enabled,
+      })
+    ) {
+      sendJson(res, 403, { error: 'Cross-origin request refused' }, req);
       return;
     }
 
@@ -499,7 +520,7 @@ export function createHttpServer(options: HttpRouterOptions) {
     if (req.method === 'GET' && url.pathname === '/api/status') {
       sendJson(res, 200, {
         status: 'running',
-        version: '0.1.0',
+        version: SERVER_VERSION,
         uptime: process.uptime(),
         ...getSnapshot(),
       }, req);

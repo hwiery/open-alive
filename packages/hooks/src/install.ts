@@ -74,17 +74,31 @@ export function installHooks(): { installed: boolean; settingsPath: string; hook
   }
 
   // 2. Read or create settings.json
-  let settings: SettingsJson = {};
+  let raw: string | undefined;
   try {
-    const raw = readFileSync(settingsPath, 'utf-8');
-    settings = JSON.parse(raw) as SettingsJson;
+    raw = readFileSync(settingsPath, 'utf-8');
   } catch {
     mkdirSync(claudeDir, { recursive: true });
   }
 
-  // 3. Backup existing settings
-  if (Object.keys(settings).length > 0) {
-    writeFileSync(settingsPath + '.backup', JSON.stringify(settings, null, 2));
+  // 3. Backup existing settings verbatim, then parse. A file we cannot parse is
+  // still the user's: refuse rather than replace it with a hooks-only object.
+  let settings: SettingsJson = {};
+  if (raw !== undefined && raw.trim() !== '') {
+    writeFileSync(settingsPath + '.backup', raw);
+    const parsed: unknown = (() => {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return undefined;
+      }
+    })();
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error(
+        `${settingsPath} is not a valid JSON object. Fix it and run install again (a copy is at ${settingsPath}.backup).`,
+      );
+    }
+    settings = parsed as SettingsJson;
   }
 
   // 4. Merge hooks

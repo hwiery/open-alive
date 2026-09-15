@@ -66,6 +66,16 @@ describe('installHooks', () => {
     expect(backup.original).toBe(true);
   });
 
+  it('refuses to overwrite settings.json it cannot parse, and backs it up verbatim', () => {
+    const settingsPath = join(TEST_HOME, '.claude', 'settings.json');
+    const broken = '{ "model": "x", // hand-edited\n';
+    writeFileSync(settingsPath, broken);
+
+    expect(() => installHooks()).toThrow(/not a valid JSON object/);
+    expect(readFileSync(settingsPath, 'utf-8')).toBe(broken);
+    expect(readFileSync(settingsPath + '.backup', 'utf-8')).toBe(broken);
+  });
+
   it('copies stream-event.sh to ~/.open-alive/hooks/', () => {
     const result = installHooks();
     expect(existsSync(result.hookScriptPath)).toBe(true);

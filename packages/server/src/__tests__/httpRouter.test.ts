@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import type { Server } from 'node:http';
+import { request, type Server } from 'node:http';
 import { SessionStore } from '@open-alive/core';
 import type { HookEventPayload } from '@open-alive/core';
 import { createHttpServer } from '../httpRouter.js';
@@ -379,6 +379,60 @@ describe('HTTP Router', () => {
         headers: { Origin: 'http://127.0.0.1:3141' },
       });
       expect(res.headers.get('access-control-allow-origin')).toBe('http://127.0.0.1:3141');
+    });
+
+    describe('cross-site requests (CSRF / DNS rebinding)', () => {
+      function rawRequest(method: string, path: string, headers: Record<string, string>, body?: string) {
+        const { port } = new URL(baseUrl);
+        return new Promise<number>((resolve, reject) => {
+          const req = request({ host: '127.0.0.1', port, method, path, headers }, (res) => {
+            res.resume();
+            resolve(res.statusCode ?? 0);
+          });
+          req.on('error', reject);
+          if (body !== undefined) req.write(body);
+          req.end();
+        });
+      }
+      const forged = (id: string) =>
+        JSON.stringify({ session_id: id, hook_event_name: 'SessionStart', cwd: '/tmp' });
+
+      it('refuses a text/plain POST from a foreign page and does not ingest it', async () => {
+        const status = await rawRequest(
+          'POST',
+          '/api/event',
+          { Origin: 'https://evil.example', 'Content-Type': 'text/plain' },
+          forged('csrf-evil'),
+        );
+        expect(status).toBe(403);
+        expect(store.getAllAgents().some((a) => a.sessionId === 'csrf-evil')).toBe(false);
+      });
+
+      it('refuses a DNS-rebound request', async () => {
+        const status = await rawRequest(
+          'POST',
+          '/api/event',
+          { Host: 'evil.example:3141', Origin: 'http://evil.example:3141', 'Content-Type': 'text/plain' },
+          forged('csrf-rebind'),
+        );
+        expect(status).toBe(403);
+      });
+
+      it('refuses a browser extension outside its ingest route', async () => {
+        const origin = 'chrome-extension://abcdefghijklmnop';
+        expect(await rawRequest('POST', '/api/event', { Origin: origin }, forged('csrf-ext'))).toBe(403);
+        expect(await rawRequest('POST', '/v1/ingest/web', { Origin: origin }, '{}')).not.toBe(403);
+      });
+
+      it('still accepts the dashboard on a loopback origin', async () => {
+        const status = await rawRequest(
+          'POST',
+          '/api/event',
+          { Origin: 'http://localhost:5173', 'Content-Type': 'application/json' },
+          forged('csrf-local'),
+        );
+        expect(status).toBe(200);
+      });
     });
 
     it('handles deeply nested JSON without crash', async () => {

@@ -64,7 +64,7 @@ import { createEvalStore } from './evalStore.js';
 import { verificationHealth, formatVerificationHealth } from './verificationHealth.js';
 import { buildMainPrompt, buildOrchestratorPrompt } from './ticketPrompt.js';
 import { loadServerEnv, SERVER_ENV_FILE } from './serverEnv.js';
-import { loadRemoteAccessConfig } from './remoteAccess.js';
+import { loadRemoteAccessConfig, createAuthLimiter } from './remoteAccess.js';
 import { ensureLocalToken } from './localToken.js';
 import { authorizeUpgrade } from './wsAuth.js';
 import { isCwdAllowed } from './ticketRunner.js';
@@ -756,11 +756,16 @@ function validateRemoteTicketCreate(input: { cwd: string; location?: { kind: str
   return null;
 }
 
+// One lockout counter for the HTTP API and the /ws upgrade: otherwise token
+// guesses sent over the socket are never rate-limited.
+const authLimiter = createAuthLimiter();
+
 const httpServer = createHttpServer({
   onEvent,
   getSnapshot,
   runs: runStore,
   remoteAccess,
+  authLimiter,
   remoteProjects: listRemoteProjects,
   remoteBranches: listRemoteBranches,
   tickets: {
@@ -1065,6 +1070,7 @@ httpServer.on('upgrade', (req, socket, head) => {
   const decision = authorizeUpgrade(
     { headers: req.headers, remoteAddress: req.socket.remoteAddress, port: PORT },
     remoteAccess,
+    authLimiter,
   );
   if (!decision.ok) {
     console.warn(`[ws] rejected upgrade (${decision.reason})`);
