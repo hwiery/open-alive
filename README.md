@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/dashboard.png" alt="open-alive dashboard" width="800" />
+  <img src="docs/screenshots/02-pixel-office.png" alt="open-alive dashboard" width="800" />
 </p>
 
 <p align="center">
