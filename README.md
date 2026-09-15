@@ -56,7 +56,7 @@ Supported: macOS, Linux, and Windows via WSL2 (install and run everything inside
 ### Option A — one-shot installer (recommended / 권장)
 
 ```bash
-git clone https://github.com/must-goldenrod/open-alive.git
+git clone https://github.com/hwiery/open-alive.git
 cd open-alive
 ./scripts/install.sh        # build → install the `open-alive` command → run setup
 ```
