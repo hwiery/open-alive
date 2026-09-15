@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
   DELEGATE_MODELS,
@@ -36,9 +38,9 @@ describe('catalogue integrity', () => {
 
 describe('findDelegateModel / resolveModelId', () => {
   it('matches by id and by alias, case-insensitively', () => {
-    expect(findDelegateModel('kimi')?.id).toBe('kimi-k3');
-    expect(findDelegateModel('KIMI-K3')?.id).toBe('kimi-k3');
-    expect(findDelegateModel(' grok ')?.id).toBe('grok-4.5');
+    expect(findDelegateModel('code')?.id).toBe('code-model');
+    expect(findDelegateModel('CODE-MODEL')?.id).toBe('code-model');
+    expect(findDelegateModel(' second ')?.id).toBe('reasoning-model-b');
   });
 
   it('passes an unknown id through (the gateway catalogue rotates)', () => {
@@ -49,7 +51,7 @@ describe('findDelegateModel / resolveModelId', () => {
 
 describe('buildDelegateChain', () => {
   it('appends the catalogue fallbacks to a known model', () => {
-    expect(buildDelegateChain('kimi')).toEqual(['kimi-k3', ...DELEGATE_MODELS.find((m) => m.id === 'kimi-k3')!.fallbacks]);
+    expect(buildDelegateChain('code')).toEqual(['code-model', ...DELEGATE_MODELS.find((m) => m.id === 'code-model')!.fallbacks]);
   });
 
   it('gives an unknown model the cross-vendor default tail', () => {
@@ -57,23 +59,26 @@ describe('buildDelegateChain', () => {
   });
 
   it('takes an explicit multi-model chain literally', () => {
-    expect(buildDelegateChain('grok, kimi ,glm')).toEqual(['grok-4.5', 'kimi-k3', 'glm-5.3']);
+    expect(buildDelegateChain('second, code ,fast')).toEqual(['reasoning-model-b', 'code-model', 'fast-model']);
   });
 
   it('pins to one model under --no-fallback', () => {
-    expect(buildDelegateChain('grok', { noFallback: true })).toEqual(['grok-4.5']);
+    expect(buildDelegateChain('second', { noFallback: true })).toEqual(['reasoning-model-b']);
   });
 
   it('lets OA_DELEGATE_FALLBACKS replace the tail', () => {
-    expect(buildDelegateChain('kimi', { fallbackOverride: 'glm, flash' })).toEqual([
-      'kimi-k3',
-      'glm-5.3',
-      'gemini/gemini-3.7-flash',
+    expect(buildDelegateChain('code', { fallbackOverride: 'pro, fast' })).toEqual([
+      'code-model',
+      'reasoning-model-a',
+      'fast-model',
     ]);
   });
 
   it('dedupes when the override repeats the primary', () => {
-    expect(buildDelegateChain('glm', { fallbackOverride: 'glm, grok' })).toEqual(['glm-5.3', 'grok-4.5']);
+    expect(buildDelegateChain('pro', { fallbackOverride: 'pro, second' })).toEqual([
+      'reasoning-model-a',
+      'reasoning-model-b',
+    ]);
   });
 
   it('returns nothing for an empty request', () => {
@@ -81,36 +86,16 @@ describe('buildDelegateChain', () => {
   });
 });
 
-describe('gateway alignment', () => {
-  // The gateway's catalogue rotates; these are the ids probed live on
-  // 2026-09-08. A retired id here means a delegation spends an attempt on a
-  // model the gateway answers 400 for, so the table must track the gateway.
-  const GATEWAY_IDS = [
-    'gemini/gemini-3.7-flash',
-    'gemini/gemini-3.6-flash',
-    'gemini/gemini-3.5-flash',
-    'gemini/gemini-3.5-flash-lite',
-    'gemini/gemini-3.1-pro-preview',
-    'glm-5.3',
-    'glm-5.3-flash',
-    'glm-5.2',
-    'grok-4.5',
-    'kimi-k3',
-    'kimi-k3-go2',
-    'kimi-k2.7-code',
-    'gemma4',
-  ];
-
-  it('names only ids the gateway serves', () => {
-    const served = new Set(GATEWAY_IDS);
-    for (const m of DELEGATE_MODELS) expect(served.has(m.id), m.id).toBe(true);
-  });
-
-  it('keeps a newest-first entry for every family', () => {
-    const ids = DELEGATE_MODELS.map((m) => m.id);
-    for (const newest of ['gemini/gemini-3.7-flash', 'glm-5.3', 'kimi-k3', 'grok-4.5']) {
-      expect(ids).toContain(newest);
-    }
+describe('built-in preset', () => {
+  // The preset holds placeholders only: which models exist is up to the
+  // user's gateway. It must stay the same table the shipped example documents.
+  it('mirrors examples/models.example.json', () => {
+    const example = JSON.parse(
+      readFileSync(resolve(__dirname, '../../../../../examples/models.example.json'), 'utf-8'),
+    ) as { models: { id: string; aliases: string[]; kind: string; fallbacks: string[] }[] };
+    expect(
+      BUILTIN_DELEGATE_MODELS.map(({ id, aliases, kind, fallbacks }) => ({ id, aliases, kind, fallbacks })),
+    ).toEqual(example.models.map(({ id, aliases, kind, fallbacks }) => ({ id, aliases, kind, fallbacks })));
   });
 });
 
@@ -118,8 +103,8 @@ describe('describeDelegateModels', () => {
   it('lists every model with its primary alias', () => {
     const text = describeDelegateModels();
     expect(text.split('\n')).toHaveLength(DELEGATE_MODELS.length);
-    expect(text).toContain('kimi (kimi-k3)');
-    expect(text).toContain('grok (grok-4.5)');
+    expect(text).toContain('code (code-model)');
+    expect(text).toContain('second (reasoning-model-b)');
   });
 });
 

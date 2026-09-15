@@ -9,8 +9,7 @@
  *
  * Every gateway serves a different set of models, so the catalogue is user
  * configuration: `~/.open-alive/models.json` (or `OA_DELEGATE_MODELS_FILE`)
- * replaces the built-in table below, which is only an example preset written
- * for a LiteLLM gateway that routes Gemini / GLM / Grok / Kimi models.
+ * replaces the built-in table below, which only holds placeholder ids.
  * `open-alive setup` writes that file from the gateway's own `/v1/models`.
  *
  * Unknown ids are NOT rejected anywhere — the gateway's catalogue rotates, so an
@@ -35,120 +34,49 @@ export interface DelegateModelSpec {
   readonly fallbacks: readonly string[];
 }
 
-const GEMINI_LITE = 'gemini/gemini-3.5-flash-lite';
-const GEMINI_FLASH = 'gemini/gemini-3.7-flash';
-const GEMINI_FLASH_36 = 'gemini/gemini-3.6-flash';
-const GEMINI_FLASH_35 = 'gemini/gemini-3.5-flash';
-const GEMINI_PRO = 'gemini/gemini-3.1-pro-preview';
-const GLM = 'glm-5.3';
-const GLM_FLASH = 'glm-5.3-flash';
-const GLM_52 = 'glm-5.2';
-
-/** Example preset used when no models.json is configured. */
-export const BUILTIN_DELEGATE_MODELS: readonly DelegateModelSpec[] = Object.freeze([
-  {
-    id: GEMINI_LITE,
-    aliases: ['lite', 'flash-lite', 'fast'],
-    kind: 'fast',
-    note: 'cheapest and fastest — bulk classify / summarize / extract',
-    fallbacks: [GEMINI_FLASH_35, GEMINI_FLASH, GLM_FLASH],
-  },
-  {
-    id: GEMINI_FLASH,
-    aliases: ['flash', 'gemini'],
-    kind: 'fast',
-    note: 'general-purpose fast + long context (latest flash)',
-    fallbacks: [GEMINI_FLASH_36, GEMINI_FLASH_35, GLM_FLASH],
-  },
-  {
-    id: GEMINI_FLASH_36,
-    aliases: ['flash-3.6'],
-    kind: 'fast',
-    note: 'previous-generation flash (flash substitute)',
-    fallbacks: [GEMINI_FLASH, GEMINI_FLASH_35, GLM_FLASH],
-  },
-  {
-    id: GEMINI_FLASH_35,
-    aliases: ['flash-3.5'],
-    kind: 'fast',
-    note: 'older flash (last flash route)',
-    fallbacks: [GEMINI_FLASH, GEMINI_FLASH_36, GEMINI_LITE],
-  },
-  {
-    id: GEMINI_PRO,
-    aliases: ['pro', 'gemini-pro'],
-    kind: 'reasoning',
-    note: 'hard reasoning, long analysis',
-    fallbacks: [GLM, 'grok-4.5', GEMINI_FLASH],
-  },
-  {
-    id: 'grok-4.5',
-    aliases: ['grok'],
-    kind: 'reasoning',
-    note: 'general reasoning — second opinion from another vendor',
-    fallbacks: [GLM, GEMINI_PRO, 'kimi-k3'],
-  },
-  {
-    id: 'kimi-k3',
-    aliases: ['kimi', 'k3'],
-    kind: 'code',
-    note: 'code and agentic work',
-    fallbacks: ['kimi-k3-go2', 'kimi-k2.7-code', GLM, GEMINI_PRO],
-  },
-  {
-    id: 'kimi-k3-go2',
-    aliases: ['kimi-go2', 'k3-go2'],
-    kind: 'code',
-    note: 'secondary route for kimi-k3',
-    fallbacks: ['kimi-k3', 'kimi-k2.7-code', GLM, GEMINI_PRO],
-  },
-  {
-    id: 'kimi-k2.7-code',
-    aliases: ['kimi-code', 'k2-code'],
-    kind: 'code',
-    note: 'code-specialised (previous generation)',
-    fallbacks: ['kimi-k3', GLM, GEMINI_PRO],
-  },
-  {
-    id: GLM,
-    aliases: ['glm'],
-    kind: 'reasoning',
-    note: 'general reasoning + long context (latest GLM)',
-    fallbacks: [GLM_52, GEMINI_PRO, 'grok-4.5'],
-  },
-  {
-    id: GLM_FLASH,
-    aliases: ['glm-flash'],
-    kind: 'fast',
-    note: 'fast GLM — cheap bulk work on a non-Gemini route',
-    fallbacks: [GLM, GEMINI_FLASH, GEMINI_LITE],
-  },
-  {
-    id: GLM_52,
-    aliases: ['glm2', 'glm-5.2'],
-    kind: 'reasoning',
-    note: 'previous-generation GLM (glm substitute)',
-    fallbacks: [GLM, GEMINI_PRO, GEMINI_FLASH],
-  },
-  {
-    id: 'gemma4',
-    aliases: ['gemma'],
-    kind: 'utility',
-    note: 'small local model (ollama)',
-    fallbacks: [GEMINI_LITE],
-  },
-]);
+const FAST = 'fast-model';
+const REASONING_A = 'reasoning-model-a';
+const REASONING_B = 'reasoning-model-b';
+const CODE = 'code-model';
 
 /**
- * Tail used when the requested model is not in the table (a fresh gateway id).
- * Deliberately cross-vendor: whatever went wrong with the unknown id, these are
- * unlikely to share the cause.
+ * Placeholder preset used when no models.json is configured. It mirrors
+ * examples/models.example.json: the ids are not real models, so a gateway will
+ * reject them until the user writes a catalogue of the ids it actually serves.
  */
-export const BUILTIN_FALLBACK_TAIL: readonly string[] = Object.freeze([
-  GEMINI_FLASH,
-  GLM,
-  GEMINI_LITE,
+export const BUILTIN_DELEGATE_MODELS: readonly DelegateModelSpec[] = Object.freeze([
+  {
+    id: FAST,
+    aliases: ['fast', 'lite'],
+    kind: 'fast',
+    note: 'cheap and fast — bulk classify / summarize / extract',
+    fallbacks: [REASONING_A],
+  },
+  {
+    id: REASONING_A,
+    aliases: ['pro'],
+    kind: 'reasoning',
+    note: 'hard reasoning, long analysis',
+    fallbacks: [REASONING_B, FAST],
+  },
+  {
+    id: REASONING_B,
+    aliases: ['second'],
+    kind: 'reasoning',
+    note: 'second opinion from another vendor',
+    fallbacks: [REASONING_A, FAST],
+  },
+  {
+    id: CODE,
+    aliases: ['code'],
+    kind: 'code',
+    note: 'code and agentic work',
+    fallbacks: [REASONING_A],
+  },
 ]);
+
+/** Tail used when the requested model is not in the table (a fresh gateway id). */
+export const BUILTIN_FALLBACK_TAIL: readonly string[] = Object.freeze([FAST, REASONING_A]);
 
 // ── User catalogue (models.json) ─────────────────────────────────────────────
 

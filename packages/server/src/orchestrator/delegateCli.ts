@@ -22,7 +22,7 @@ import { createCooldownStore, COOLDOWN_PATH, type CooldownMap, type CooldownStor
  * is retired answers HTTP 400 "Invalid model name"), so this is only the last
  * resort — `OA_DELEGATE_MODEL` overrides it without a rebuild.
  */
-export const DEFAULT_DELEGATE_MODEL = 'gemini/gemini-3.5-flash-lite';
+export const DEFAULT_DELEGATE_MODEL = 'fast-model';
 
 /** Per-attempt ceiling; a hung model must not hold the whole delegation open. */
 export const DEFAULT_DELEGATE_TIMEOUT_MS = 180_000;

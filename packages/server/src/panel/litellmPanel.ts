@@ -41,23 +41,18 @@ export interface Panel {
 }
 
 /**
- * Default roster: three models from three different vendors.
- *
- * Same-family models share the same blind spots, so a panel of Gemini variants
- * would agree with itself and prove nothing. Three is the smallest roster that
- * can produce a 2-of-3 majority when one member abstains.
+ * Placeholder roster (see examples/models.example.json) used when neither
+ * OA_PANEL_MODELS nor models.json names one. Pick models from different vendors:
+ * same-family models share blind spots. Three is the smallest roster that can
+ * produce a 2-of-3 majority when one member abstains.
  *
  * What actually answers is not always what is named here, so read
- * `respondedModel`, not this list, when asking who reviewed something. Until
- * 2026-09-08 both the `grok-4.5` and `kimi-k3` seats had spent their entire
- * history on their first fallback: the gateway rejected every call to those two
- * with "MissingSessionID", which the client now answers (see SESSION_HEADER in
- * litellmClient). Both models answer directly again as of that date.
+ * `respondedModel`, not this list, when asking who reviewed something.
  */
 export const DEFAULT_PANEL_MODELS: readonly string[] = Object.freeze([
-  'gemini/gemini-3.1-pro-preview',
-  'grok-4.5',
-  'kimi-k3',
+  'reasoning-model-a',
+  'reasoning-model-b',
+  'code-model',
 ]);
 
 /** Per-member ceiling. A hung reviewer must not hold a ticket's gate open. */

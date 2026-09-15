@@ -39,7 +39,7 @@ Everything runs on your machine. There is no telemetry; the only outbound reques
 
 | | Required | Notes |
 |---|---|---|
-| **Node.js ≥ 20** | yes | https://nodejs.org |
+| **Node.js ≥ 20** | yes | https://nodejs.org — an LTS release (20, 22 or 24) is recommended; newer releases may need C/C++ build tools for the native modules below |
 | **Claude Code** | yes | https://docs.anthropic.com/en/docs/claude-code |
 | **git** | yes | to clone the repo |
 | pnpm ≥ 10 | from source | the installer enables it via `corepack` if missing |
@@ -132,7 +132,7 @@ All settings are optional and live in `~/.open-alive/.env` (`KEY=VALUE` per line
 | `LITELLM_BASE_URL` | `http://localhost:4000` | OpenAI-compatible gateway for sub-agent delegation and review panels |
 | `LITELLM_KEY` | — | Gateway key. Without it, tickets run without delegation or panels |
 | `OA_DELEGATE_MODEL` | from `models.json` | Default model for `oa-delegate` |
-| `OA_DELEGATE_MODELS_FILE` | `~/.open-alive/models.json` | Model catalogue (`builtin` = a built-in preset of public vendor model ids — only useful if your gateway serves those ids) |
+| `OA_DELEGATE_MODELS_FILE` | `~/.open-alive/models.json` | Model catalogue (`builtin` = the placeholder preset from `examples/models.example.json`; replace it with the ids your gateway serves) |
 | `OA_PANEL_MODELS` | from `models.json` | Comma-separated review-panel roster |
 
 ### Model catalogue (`models.json`) / 모델 카탈로그
