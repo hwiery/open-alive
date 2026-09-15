@@ -60,10 +60,13 @@ cd open-alive
 `install.sh` checks Node/pnpm, builds the self-contained package, installs the `open-alive` command globally with npm, then starts the **setup wizard**.
 `install.sh`가 Node/pnpm 확인 → 빌드 → `open-alive` 명령 전역 설치 → **설정 마법사** 실행까지 한 번에 처리합니다.
 
-### Option B — npm
+### Option B — npm (planned / 예정)
+
+Not published to the npm registry yet — use Option A for now.
+아직 npm 레지스트리에 배포되지 않았습니다. 현재는 Option A를 사용하세요.
 
 ```bash
-npm install -g open-alive   # available after the first npm release / 첫 npm 릴리스 이후
+npm install -g open-alive   # after the first npm release / 첫 npm 릴리스 이후
 open-alive setup
 ```
 
@@ -298,7 +301,7 @@ scripts/           install, build-npm, release, changelog
 docs/adr/          architecture decision records (Korean)
 ```
 
-Releases: `pnpm release:patch|minor|major` bumps the root `package.json`, regenerates the changelog, builds `npm-dist/`, tags, and publishes. The root `package.json` version is the single source of truth.
+Releases: `pnpm release:patch|minor|major` bumps the root `package.json`, regenerates the changelog, builds `npm-dist/`, tags, and publishes (`RELEASE_PUBLISH=0` skips the npm publish). The root `package.json` version is the single source of truth.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 

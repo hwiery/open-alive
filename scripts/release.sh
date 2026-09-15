@@ -11,7 +11,7 @@
 #   2. Updates CHANGELOG.md from git history
 #   3. Builds the npm package (reads version from package.json)
 #   4. Creates a git tag
-#   5. Publishes to npmjs.com
+#   5. Publishes to npmjs.com (skip with RELEASE_PUBLISH=0)
 set -e
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -63,14 +63,20 @@ git add package.json CHANGELOG.md
 git commit -m "release: v$NEW_VERSION"
 git tag "v$NEW_VERSION"
 
-# 6. Publish to npm
-echo ""
-echo "Publishing to npm..."
-cd "$ROOT/npm-dist"
-npm publish --access public
+# 6. Publish to npm (RELEASE_PUBLISH=0 skips it: tag + tarball only)
+if [[ "${RELEASE_PUBLISH:-1}" == "0" ]]; then
+  echo ""
+  echo "Skipped npm publish (RELEASE_PUBLISH=0). Package built at npm-dist/."
+  echo "Done! open-alive v$NEW_VERSION tagged."
+else
+  echo ""
+  echo "Publishing to npm..."
+  cd "$ROOT/npm-dist"
+  npm publish --access public
 
-echo ""
-echo "Done! open-alive@$NEW_VERSION published."
+  echo ""
+  echo "Done! open-alive@$NEW_VERSION published."
+fi
 echo ""
 echo "Next steps:"
 echo "  git push origin main --tags"

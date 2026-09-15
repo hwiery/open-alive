@@ -109,6 +109,7 @@ cat > "$OUT/package.json" << PKGJSON
   "engines": {
     "node": ">=20"
   },
+  "os": ["darwin", "linux"],
   "repository": {
     "type": "git",
     "url": "$REPO_URL"
