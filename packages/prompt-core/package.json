@@ -28,7 +28,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "better-sqlite3": "^11.7.0",
+    "better-sqlite3": "^12.11.1",
     "franc-min": "^6.2.0",
     "pino": "^9.5.0",
     "zod": "^4.3.6"

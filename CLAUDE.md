@@ -28,7 +28,7 @@ pnpm --filter=@open-alive/server exec vitest run -t "테스트 이름"          
 ```
 
 - 패키지 간 import 는 `dist/` 를 참조한다. core/storage 등을 고친 뒤 의존 패키지를 테스트하려면 먼저 `pnpm build`.
-- CI(`.github/workflows/ci.yml`): ubuntu/macos × Node 20/22 에서 install --frozen-lockfile → build → UI tsc → test, 별도로 `pnpm audit`.
+- CI(`.github/workflows/ci.yml`): ubuntu/macos × Node 20/22/24 에서 install --frozen-lockfile → build → UI tsc → test, 별도로 `pnpm audit`. `hwiery/open-alive` 에서만 실행(포크·미러는 `if: github.repository` 조건으로 건너뜀) — 다른 저장소의 러너 자원을 쓰지 않는다.
 - server 테스트는 `OA_DELEGATE_MODELS_FILE=builtin` 으로 고정 — 로컬 `~/.open-alive/models.json` 이 테스트에 영향을 주지 않게 한다.
 
 실제 `~/.claude/settings.json`·데이터를 건드리지 않고 소스에서 실행:

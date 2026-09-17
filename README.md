@@ -43,7 +43,7 @@ Everything runs on your machine. There is no telemetry; the only outbound reques
 
 | | Required | Notes |
 |---|---|---|
-| **Node.js ≥ 20** | yes | https://nodejs.org — an LTS release (20, 22 or 24) is recommended; newer releases may need C/C++ build tools for the native modules below |
+| **Node.js ≥ 20** | yes | https://nodejs.org — Node 22 or 24 LTS recommended (prebuilt native modules). Node 20 and non-LTS releases build `better-sqlite3` from source, which needs the C/C++ build tools below |
 | **Claude Code** | yes | https://docs.anthropic.com/en/docs/claude-code |
 | **git** | yes | to clone the repo |
 | pnpm ≥ 10 | from source | the installer enables it via `corepack` if missing |
