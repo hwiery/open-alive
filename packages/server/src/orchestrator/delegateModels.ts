@@ -177,10 +177,22 @@ export function loadDelegateCatalog(
   }
 }
 
-/** The catalogue this process runs with (read once at startup). */
-export const ACTIVE_DELEGATE_CATALOG: DelegateCatalog = loadDelegateCatalog();
-export const DELEGATE_MODELS: readonly DelegateModelSpec[] = ACTIVE_DELEGATE_CATALOG.models;
-export const DEFAULT_FALLBACK_TAIL: readonly string[] = ACTIVE_DELEGATE_CATALOG.fallbackTail;
+/**
+ * The catalogue this process runs with. Read at startup and re-read by
+ * {@link reloadDelegateCatalog} (the dashboard's gateway settings). These are
+ * `let` exports: ES module importers see the reassigned value (live bindings).
+ */
+export let ACTIVE_DELEGATE_CATALOG: DelegateCatalog = loadDelegateCatalog();
+export let DELEGATE_MODELS: readonly DelegateModelSpec[] = ACTIVE_DELEGATE_CATALOG.models;
+export let DEFAULT_FALLBACK_TAIL: readonly string[] = ACTIVE_DELEGATE_CATALOG.fallbackTail;
+
+/** Re-read models.json (or the override) and make it the active catalogue. */
+export function reloadDelegateCatalog(env: NodeJS.ProcessEnv = process.env): DelegateCatalog {
+  ACTIVE_DELEGATE_CATALOG = loadDelegateCatalog(env);
+  DELEGATE_MODELS = ACTIVE_DELEGATE_CATALOG.models;
+  DEFAULT_FALLBACK_TAIL = ACTIVE_DELEGATE_CATALOG.fallbackTail;
+  return ACTIVE_DELEGATE_CATALOG;
+}
 
 /** Look a model up by id or alias. Returns undefined for ids not in the table. */
 export function findDelegateModel(input: string): DelegateModelSpec | undefined {

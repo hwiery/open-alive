@@ -151,8 +151,9 @@ export async function runDelegateCli(
   const chat =
     deps.chat ??
     (async (m: string, p: string) => {
-      const key = env.LITELLM_KEY;
-      if (!key) throw new Error('LITELLM_KEY not set');
+      const key = env.LITELLM_KEY ?? '';
+      // A keyless gateway (Ollama, vLLM) is configured by its base URL alone.
+      if (!key && !env.LITELLM_BASE_URL) throw new Error('gateway not configured (set LITELLM_BASE_URL and/or LITELLM_KEY)');
       const client = createLitellmClient({
         baseUrl: env.LITELLM_BASE_URL || DEFAULT_LITELLM_BASE_URL,
         apiKey: key,
