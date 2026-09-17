@@ -6,11 +6,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/must-goldenrod/open-alive.git"
+    "url": "git+https://github.com/hwiery/open-alive.git"
   },
-  "homepage": "https://github.com/must-goldenrod/open-alive",
+  "homepage": "https://github.com/hwiery/open-alive",
   "bugs": {
-    "url": "https://github.com/must-goldenrod/open-alive/issues"
+    "url": "https://github.com/hwiery/open-alive/issues"
   },
   "scripts": {
     "build": "turbo run build",

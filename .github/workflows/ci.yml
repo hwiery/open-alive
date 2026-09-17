@@ -8,8 +8,12 @@ on:
 
 jobs:
   build-and-test:
+    # Only the canonical repository runs CI; forks and mirrors must not spend their own runner minutes.
+    if: github.repository == 'hwiery/open-alive'
     runs-on: ${{ matrix.os }}
     strategy:
+      # One flaky job (a native-module crash seen on Node 24) must not cancel the rest of the matrix.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
         node-version: [20, 22, 24]
@@ -37,6 +41,7 @@ jobs:
         run: pnpm test
 
   security-audit:
+    if: github.repository == 'hwiery/open-alive'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

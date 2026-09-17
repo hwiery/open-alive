@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/dashboard.png" alt="open-alive dashboard" width="800" />
+  <img src="docs/screenshots/02-pixel-office.png" alt="open-alive dashboard" width="800" />
 </p>
 
 <p align="center">
@@ -43,7 +43,7 @@ Everything runs on your machine. There is no telemetry; the only outbound reques
 
 | | Required | Notes |
 |---|---|---|
-| **Node.js ≥ 20** | yes | https://nodejs.org — an LTS release (20, 22 or 24) is recommended; newer releases may need C/C++ build tools for the native modules below |
+| **Node.js ≥ 20** | yes | https://nodejs.org — Node 22 or 24 LTS recommended (prebuilt native modules). Node 20 and non-LTS releases build `better-sqlite3` from source, which needs the C/C++ build tools below |
 | **Claude Code** | yes | https://docs.anthropic.com/en/docs/claude-code |
 | **git** | yes | to clone the repo |
 | pnpm ≥ 10 | from source | the installer enables it via `corepack` if missing |
@@ -56,7 +56,7 @@ Supported: macOS, Linux, and Windows via WSL2 (install and run everything inside
 ### Option A — one-shot installer (recommended / 권장)
 
 ```bash
-git clone https://github.com/must-goldenrod/open-alive.git
+git clone https://github.com/hwiery/open-alive.git
 cd open-alive
 ./scripts/install.sh        # build → install the `open-alive` command → run setup
 ```
@@ -85,6 +85,8 @@ open-alive setup
 5. **Start now** / 바로 시작
 
 Answers are saved to `~/.open-alive/.env` (mode `600`). Re-run `open-alive setup` any time to change them; `open-alive setup --yes` takes all defaults.
+The gateway can also be set from the dashboard: **Settings → Backend** (test the connection, save, optionally write `models.json`) applies without a restart.
+게이트웨이는 대시보드 **설정 → 백엔드** 폼에서도 설정할 수 있으며, 재시작 없이 적용됩니다.
 답변은 `~/.open-alive/.env`(권한 600)에 저장되고, 언제든 다시 실행해 바꿀 수 있습니다.
 
 ### Verify / 동작 확인
@@ -137,7 +139,7 @@ All settings are optional and live in `~/.open-alive/.env` (`KEY=VALUE` per line
 | `OPEN_ALIVE_AUTO_COLLECT` | `1` | Run Efficio (`python3`) when a session ends. `0` disables |
 | `OPEN_ALIVE_TICKET_CONCURRENCY` | built-in | Max tickets running at once |
 | `LITELLM_BASE_URL` | `http://localhost:4000` | OpenAI-compatible gateway for sub-agent delegation and review panels |
-| `LITELLM_KEY` | — | Gateway key. Without it, tickets run without delegation or panels |
+| `LITELLM_KEY` | — | Gateway key — optional for keyless gateways such as Ollama (`LITELLM_BASE_URL` alone is enough). With neither set, tickets run without delegation or panels |
 | `OA_DELEGATE_MODEL` | from `models.json` | Default model for `oa-delegate` |
 | `OA_DELEGATE_MODELS_FILE` | `~/.open-alive/models.json` | Model catalogue (`builtin` = the placeholder preset from `examples/models.example.json`; replace it with the ids your gateway serves) |
 | `OA_PANEL_MODELS` | from `models.json` | Comma-separated review-panel roster |
@@ -313,6 +315,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.
 
 ## License / 라이선스
 
-[MIT](LICENSE). Notification sounds are original and generated for this project; no third-party assets are bundled.
+[MIT](LICENSE). Notification sounds are original and generated for this project. The terminal fonts JetBrains Mono, Fira Code, Cascadia Code, Source Code Pro and IBM Plex Mono are bundled under the SIL Open Font License 1.1 (via @fontsource).
 
 "Claude" and "Claude Code" are trademarks of Anthropic, PBC. open-alive is an independent community project and is not affiliated with or endorsed by Anthropic.

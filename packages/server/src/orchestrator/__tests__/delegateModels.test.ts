@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { describe, it, expect } from 'vitest';
 import {
   DELEGATE_MODELS,
@@ -11,6 +12,8 @@ import {
   parseDelegateCatalog,
   loadDelegateCatalog,
   BUILTIN_DELEGATE_MODELS,
+  reloadDelegateCatalog,
+  ACTIVE_DELEGATE_CATALOG,
 } from '../delegateModels.js';
 
 describe('catalogue integrity', () => {
@@ -149,5 +152,24 @@ describe('user catalogue (models.json)', () => {
     const broken = loadDelegateCatalog({ OA_DELEGATE_MODELS_FILE: '/x' }, () => '{not json');
     expect(broken.models).toBe(BUILTIN_DELEGATE_MODELS);
     expect(loadDelegateCatalog({ OA_DELEGATE_MODELS_FILE: 'builtin' }, () => file).source).toBe('builtin');
+  });
+});
+
+describe('reloadDelegateCatalog', () => {
+  it('swaps the live catalogue seen by importers and lookups', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oa-models-'));
+    const file = join(dir, 'models.json');
+    writeFileSync(file, JSON.stringify({ defaultModel: 'live-a', models: [{ id: 'live-a', aliases: ['la'] }] }));
+    try {
+      reloadDelegateCatalog({ OA_DELEGATE_MODELS_FILE: file });
+      expect(ACTIVE_DELEGATE_CATALOG.source).toBe(file);
+      expect(ACTIVE_DELEGATE_CATALOG.defaultModel).toBe('live-a');
+      expect(DELEGATE_MODELS.map((m) => m.id)).toEqual(['live-a']);
+      expect(resolveModelId('la')).toBe('live-a');
+    } finally {
+      reloadDelegateCatalog({ OA_DELEGATE_MODELS_FILE: 'builtin' });
+      rmSync(dir, { recursive: true, force: true });
+    }
+    expect(DELEGATE_MODELS).toBe(BUILTIN_DELEGATE_MODELS);
   });
 });

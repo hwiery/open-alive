@@ -18,6 +18,7 @@ import {
 import { isCrossSiteRequest } from './httpOrigin.js';
 import type { EfficioReader } from './efficioReader.js';
 import { readServerVersion } from './serverVersion.js';
+import { GatewaySettingsValidationError, type GatewaySettings } from './gatewaySettings.js';
 
 const SERVER_VERSION = readServerVersion();
 
@@ -40,6 +41,18 @@ const WrappedPayloadSchema = z.object({
   session_id: z.string(),
   timestamp: z.number(),
   data: HookEventDataSchema,
+});
+
+const GatewayTestBodySchema = z.object({
+  baseUrl: z.string(),
+  apiKey: z.string().optional(),
+});
+
+const GatewaySaveBodySchema = z.object({
+  baseUrl: z.string(),
+  apiKey: z.string().optional(),
+  defaultModel: z.string().optional(),
+  writeModels: z.boolean().optional(),
 });
 
 const RenameBodySchema = z.object({
@@ -180,6 +193,13 @@ export interface HttpRouterOptions {
     list: () => unknown[];
     check: (id: string) => Promise<unknown | null>;
   };
+
+  /**
+   * OpenAI-compatible gateway settings (Settings → Backend). Absent → the
+   * `/api/settings/gateway*` routes 404. Local (or full-access token) callers
+   * only: it writes the API key to disk.
+   */
+  gatewaySettings?: GatewaySettings;
 
   /**
    * Local git branch operations for the ticket composer. Absent when the git
@@ -388,6 +408,7 @@ export function createHttpServer(options: HttpRouterOptions) {
     runs,
     tickets,
     backends,
+    gatewaySettings,
     git,
     sshBrowse,
     remoteAccess,
@@ -713,6 +734,55 @@ export function createHttpServer(options: HttpRouterOptions) {
       }
       sendJson(res, 200, { evaluations: tickets.listEvaluations() }, req);
       return;
+    }
+
+    // ── LLM gateway settings ─────────────────────────────────────────────────
+    // Writes LITELLM_BASE_URL / LITELLM_KEY to ~/.open-alive/.env, so no
+    // scoped remote token may reach it. The key itself is never returned.
+    if (gatewaySettings && url.pathname.startsWith('/api/settings/gateway')) {
+      if (!sensitiveAllowed || remoteCaller) {
+        sendJson(res, 403, { error: 'Gateway settings are restricted to local callers' }, req);
+        return;
+      }
+      if (req.method === 'GET' && url.pathname === '/api/settings/gateway') {
+        sendJson(res, 200, gatewaySettings.get(), req);
+        return;
+      }
+      const isTest = url.pathname === '/api/settings/gateway/test';
+      if (req.method === 'POST' && (isTest || url.pathname === '/api/settings/gateway')) {
+        let raw: unknown;
+        try {
+          raw = JSON.parse(await readBody(req, res));
+        } catch {
+          if (!res.headersSent) sendJson(res, 400, { error: 'Invalid JSON' }, req);
+          return;
+        }
+        try {
+          if (isTest) {
+            const parsed = GatewayTestBodySchema.safeParse(raw);
+            if (!parsed.success) {
+              sendJson(res, 400, { error: 'Invalid body: baseUrl (string) is required' }, req);
+              return;
+            }
+            sendJson(res, 200, await gatewaySettings.test(parsed.data), req);
+            return;
+          }
+          const parsed = GatewaySaveBodySchema.safeParse(raw);
+          if (!parsed.success) {
+            sendJson(res, 400, { error: 'Invalid body: baseUrl (string) is required' }, req);
+            return;
+          }
+          sendJson(res, 200, await gatewaySettings.save(parsed.data), req);
+        } catch (error) {
+          if (error instanceof GatewaySettingsValidationError) {
+            sendJson(res, 400, { error: error.message }, req);
+            return;
+          }
+          console.error('[gateway] settings request failed:', error);
+          sendJson(res, 500, { error: 'Failed to apply gateway settings' }, req);
+        }
+        return;
+      }
     }
 
     // Orchestration backends (loopback-only): list + live connectivity check.
