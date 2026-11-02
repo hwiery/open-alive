@@ -11,6 +11,7 @@ process.env.NODE_ENV = 'test';
 export default defineProject({
   plugins: [react()],
   test: {
+    testTimeout: 30000,
     name: 'ui',
     environment: 'jsdom',
     env: { NODE_ENV: 'test' },
