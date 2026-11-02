@@ -1,7 +1,9 @@
 import * as pty from 'node-pty';
 import { homedir } from 'node:os';
-import type { SSHErrorKind } from '@open-alive/core';
+import type { SSHErrorKind, TerminalMode } from '@open-alive/core';
+import { resolveCli } from './spawnCli.js';
 import { augmentPath } from './envPath.js';
+import { resolveLocalModel, type LocalModel } from './localModel.js';
 
 /** Environment variables that must be removed to avoid nested-session errors */
 const CLAUDE_ENV_KEYS = ['CLAUDECODE', 'CLAUDE_CODE_SSE_PORT', 'CLAUDE_CODE_ENTRYPOINT'];
@@ -36,6 +38,24 @@ function userShell(): string {
   return process.env.SHELL || '/bin/zsh';
 }
 
+/**
+ * What node-pty starts for a terminal tab. POSIX: the user's login shell.
+ * Windows: PowerShell (always present; ConPTY gives it a real console).
+ */
+export function terminalLaunch(
+  mode: TerminalMode,
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+  shell: string = userShell(),
+): { file: string; args: string[] } {
+  if (platform === 'win32') {
+    return mode !== 'shell'
+      ? { file: 'powershell.exe', args: ['-NoLogo', '-Command', command] }
+      : { file: 'powershell.exe', args: ['-NoLogo'] };
+  }
+  return mode !== 'shell' ? { file: shell, args: ['-l', '-c', command] } : { file: shell, args: ['-l', '-i'] };
+}
+
 export interface SpawnOptions {
   handler: (data: string) => void;
   cols?: number;
@@ -43,7 +63,7 @@ export interface SpawnOptions {
   onExit?: (exitCode: number) => void;
   onSshError?: (err: { kind: SSHErrorKind; line: string }) => void;
   cwd?: string;
-  mode?: 'claude' | 'shell';
+  mode?: TerminalMode;
   /** Claude CLI entrypoint: `claude` (default) or `claude agents`. */
   claudeVariant?: 'claude' | 'agents';
   skipPermissions?: boolean;
@@ -55,6 +75,8 @@ export interface SpawnOptions {
   resumeSessionId?: string;
   /** Display name for `claude -n <name>`. */
   displayName?: string;
+  /** Codex only: run on the local model from `OA_LOCAL_MODEL` (`codex --oss`). */
+  localModel?: boolean;
 }
 
 /**
@@ -68,12 +90,42 @@ function shellSingleQuote(value: string): string {
 /** Claude CLI session UUIDs must be v4 format. Validate defensively. */
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** PowerShell single-quoted literal: only `'` needs escaping, by doubling it. */
+function powershellQuote(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
 export interface ClaudeCommandOptions {
+  /** Shell that will run the string: POSIX `sh -c` (default) or Windows PowerShell. */
+  shell?: 'posix' | 'powershell';
+  /**
+   * PowerShell only: absolute path of the CLI. Invoked with `&` so PowerShell
+   * runs `claude.cmd`/`claude.exe` and never the npm `.ps1` shim, which the
+   * default execution policy blocks.
+   */
+  claudePath?: string;
   claudeVariant?: 'claude' | 'agents';
   skipPermissions?: boolean;
   claudeSessionId?: string;
   resumeSessionId?: string;
   displayName?: string;
+  /**
+   * Claude Code `tui` setting for this session only, passed as `--settings`.
+   * Null keeps whatever the user's own settings say.
+   */
+  tui?: string | null;
+}
+
+/**
+ * `tui` for dashboard terminals, from `OPEN_ALIVE_CLAUDE_TUI`. Defaults to
+ * `default`: with `tui: "fullscreen"` Claude draws on the alternate screen, so
+ * xterm keeps no scrollback and the tab has no scrollbar. `inherit` (or a value
+ * that isn't a plain word) leaves the user's own setting alone.
+ */
+export function resolveClaudeTui(env: NodeJS.ProcessEnv): string | null {
+  const value = env.OPEN_ALIVE_CLAUDE_TUI?.trim() || 'default';
+  if (value === 'inherit' || !/^[a-z-]+$/.test(value)) return null;
+  return value;
 }
 
 /**
@@ -87,14 +139,17 @@ export interface ClaudeCommandOptions {
  * `error: unknown option '--session-id'`, so those are omitted for that variant.
  */
 export function buildClaudeCommand(opts: ClaudeCommandOptions): string {
-  const { claudeVariant = 'claude', skipPermissions, claudeSessionId, resumeSessionId, displayName } = opts;
+  const { claudeVariant = 'claude', skipPermissions, claudeSessionId, resumeSessionId, displayName, tui } = opts;
+  const ps = opts.shell === 'powershell';
+  const quote = ps ? powershellQuote : shellSingleQuote;
+  const claude = ps ? `& ${powershellQuote(opts.claudePath ?? 'claude')}` : 'claude';
 
   if (claudeVariant === 'agents') {
     const args: string[] = [];
     if (skipPermissions) {
       args.push('--dangerously-skip-permissions');
     }
-    return args.length > 0 ? `claude agents ${args.join(' ')}` : 'claude agents';
+    return args.length > 0 ? `${claude} agents ${args.join(' ')}` : `${claude} agents`;
   }
 
   const args: string[] = [];
@@ -105,12 +160,35 @@ export function buildClaudeCommand(opts: ClaudeCommandOptions): string {
     args.push('--session-id', claudeSessionId);
   }
   if (displayName && displayName.trim().length > 0) {
-    args.push('-n', shellSingleQuote(displayName.trim()));
+    args.push('-n', quote(displayName.trim()));
   }
   if (skipPermissions) {
     args.push('--dangerously-skip-permissions');
   }
-  return args.length > 0 ? `claude ${args.join(' ')}` : 'claude';
+  if (tui) {
+    args.push('--settings', quote(JSON.stringify({ tui })));
+  }
+  return args.length > 0 ? `${claude} ${args.join(' ')}` : claude;
+}
+
+export interface CodexCommandOptions {
+  shell?: 'posix' | 'powershell';
+  /** PowerShell only: absolute path of the CLI (see ClaudeCommandOptions.claudePath). */
+  codexPath?: string;
+  skipPermissions?: boolean;
+  /** Run on a local model through Codex's open-source provider. */
+  local?: LocalModel;
+}
+
+/** Shell command for an interactive Codex CLI session. */
+export function buildCodexCommand(opts: CodexCommandOptions): string {
+  const ps = opts.shell === 'powershell';
+  const args = [ps ? `& ${powershellQuote(opts.codexPath ?? 'codex')}` : 'codex'];
+  if (opts.local) {
+    args.push('--oss', '--local-provider', opts.local.provider, '-m', (ps ? powershellQuote : shellSingleQuote)(opts.local.model));
+  }
+  if (opts.skipPermissions) args.push('--dangerously-bypass-approvals-and-sandbox');
+  return args.join(' ');
 }
 
 export class ClaudeTerminal {
@@ -142,6 +220,7 @@ export class ClaudeTerminal {
       claudeSessionId,
       resumeSessionId,
       displayName,
+      localModel,
     } = opts;
 
     this.onData = handler;
@@ -155,14 +234,36 @@ export class ClaudeTerminal {
     const cwdResolved = cwd || homedir();
 
     if (mode === 'claude') {
+      const win = process.platform === 'win32';
       const claudeCmd = buildClaudeCommand({
+        ...(win ? { shell: 'powershell' as const, claudePath: resolveCli('claude', env) ?? 'claude' } : {}),
         claudeVariant,
         skipPermissions,
         claudeSessionId,
         resumeSessionId,
         displayName,
+        tui: resolveClaudeTui(process.env),
       });
-      this.ptyProc = pty.spawn(shell, ['-l', '-c', claudeCmd], {
+      const launch = terminalLaunch('claude', claudeCmd, process.platform, shell);
+      this.ptyProc = pty.spawn(launch.file, launch.args, {
+        name: 'xterm-256color',
+        cols,
+        rows,
+        cwd: cwdResolved,
+        env,
+      });
+    } else if (mode === 'codex') {
+      const win = process.platform === 'win32';
+      const local = localModel ? resolveLocalModel(process.env) : undefined;
+      // Never fall back to the cloud model when a local run was asked for.
+      if (local === null) throw new Error('OA_LOCAL_MODEL is not set or invalid');
+      const codexCmd = buildCodexCommand({
+        local,
+        ...(win ? { shell: 'powershell' as const, codexPath: resolveCli('codex', env) ?? 'codex' } : {}),
+        skipPermissions,
+      });
+      const launch = terminalLaunch('codex', codexCmd, process.platform, shell);
+      this.ptyProc = pty.spawn(launch.file, launch.args, {
         name: 'xterm-256color',
         cols,
         rows,
@@ -171,7 +272,8 @@ export class ClaudeTerminal {
       });
     } else {
       // Interactive shell mode (used for SSH presets and freeform terminals).
-      this.ptyProc = pty.spawn(shell, ['-l', '-i'], {
+      const launch = terminalLaunch('shell', '', process.platform, shell);
+      this.ptyProc = pty.spawn(launch.file, launch.args, {
         name: 'xterm-256color',
         cols,
         rows,
@@ -231,7 +333,14 @@ export class ClaudeTerminal {
   }
 
   resize(cols: number, rows: number): void {
-    this.ptyProc?.resize(cols, rows);
+    if (!this.ptyProc) return;
+    try {
+      this.ptyProc.resize(cols, rows);
+    } catch {
+      // The pty already exited (node-pty throws `ioctl(2) failed, EBADF`). A
+      // resize from the browser can race that exit; it must never take the
+      // server down with it.
+    }
   }
 
   get isAlive(): boolean {

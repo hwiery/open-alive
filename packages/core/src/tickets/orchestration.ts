@@ -5,7 +5,7 @@
  * backends. This describes the backends the user connects and their live status,
  * shown in the onboarding surface.
  */
-export type BackendId = 'claude-local' | 'ssh' | 'litellm';
+export type BackendId = 'claude-local' | 'codex-local' | 'ssh' | 'litellm';
 
 export type BackendKind = 'orchestrator' | 'subagent' | 'location';
 

@@ -23,12 +23,14 @@ export type { LocationKind, SshTarget, TicketLocation } from './tickets/location
 export type { BackendId, BackendKind, BackendStatus, TicketDelegation } from './tickets/orchestration.js';
 export {
   TICKET_RUN_PRESETS, TICKET_RUN_PRESET_IDS, TICKET_EFFORT_LEVELS,
-  TICKET_MODEL_OPUS, TICKET_MODEL_SONNET, TICKET_MODEL_LABELS, modelDisplayName,
+  TICKET_MODEL_OPUS, TICKET_MODEL_SONNET, TICKET_MODEL_FABLE, modelDisplayName,
+  TICKET_MODEL_TIERS, FALLBACK_TICKET_MODELS, TICKET_MODEL_HAIKU, isTicketModelChoice,
+  DEFAULT_TICKET_MODEL_TIER, DEFAULT_TICKET_EFFORT, isCodexModelId, TICKET_RUN_PRESET_SPECS, isClaudeModelId, mergeTicketModels,
   DEFAULT_TICKET_RUN_PRESET, isTicketRunPreset, isTicketEffort, resolveRunProfile,
 } from './tickets/runProfile.js';
-export type { TicketRunPreset, TicketRunProfile, TicketEffort } from './tickets/runProfile.js';
+export type { TicketRunPreset, TicketRunProfile, TicketEffort, TicketModelTier, TicketModelMap, TicketRunPresetSpec } from './tickets/runProfile.js';
 export type {
-  Ticket, TicketState, TicketFailureReason, TicketVerification, TicketCreateInput, TicketUsage,
+  Ticket, TicketState, TicketFailureReason, TicketVerification, TicketCreateInput, TicketUsage, TicketEngine,
   TicketAgentExit, TicketAgentExitCause,
   TicketTurn, TicketTurnRole, TicketTurnKind,
   VerificationOpinion, PanelConsensus, TicketCommit,
@@ -45,7 +47,7 @@ export type {
   RunKind, RunState, RunMeta, Run, Repository, Worktree, RunTree,
 } from './runs/types.js';
 export * from './canonical/index.js';
-export { augmentPath } from './env/path.js';
+export { augmentPath, findExecutable, pathDelimiter, splitPathList } from './env/path.js';
 export {
   addDeviceToken,
   listDeviceTokens,
@@ -53,14 +55,8 @@ export {
   readEnvValue,
   type DeviceToken,
 } from './env/tokens.js';
-export { EFFICIO_AXES, EFFICIO_PRIMARY_AXIS } from './efficio/types.js';
 export type {
-  EfficioAxisKey, EfficioAxisStatus, EfficioCluster, EfficioAxisMeta,
-  EfficioStatus, EfficioTimelineRow, EfficioTimeline,
-  EfficioAxisScore, EfficioSessionProfile, EfficioProfiles, EfficioRepeat,
-} from './efficio/types.js';
-export type {
-  UsageWindow, ScopedUsageWindow, UsageLimitsSnapshot,
+  UsageWindow, ScopedUsageWindow, UsageLimitsSnapshot, CodexUsage,
 } from './usage/rateLimits.js';
 export {
   upsertEnvValue,

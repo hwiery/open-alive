@@ -8,6 +8,7 @@ import App from './App.tsx'
 import { adoptUrlToken, installAuthFetch } from './lib/auth.ts'
 import { TokenGate } from './components/TokenGate.tsx'
 import { installAppearance } from './services/appearance.ts'
+import { installStaleBuildReload } from './lib/staleBuild.ts'
 
 // Before the first render, and before any view fetches: `open-alive start`
 // hands the dashboard its token in the URL once, and every request from here on
@@ -16,6 +17,7 @@ import { installAppearance } from './services/appearance.ts'
 adoptUrlToken()
 installAuthFetch()
 installAppearance()
+installStaleBuildReload()
 // Start fetching the chosen terminal face before the first terminal measures its grid.
 void loadTerminalFont(getFontFamily(getSettings().terminal.fontFamilyId), getSettings().terminal.fontSize)
 

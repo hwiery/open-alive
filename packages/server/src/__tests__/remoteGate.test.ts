@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import type { Server } from 'node:http';
 import { createHttpServer } from '../httpRouter.js';
@@ -55,6 +56,17 @@ beforeAll(async () => {
     saveProjectName: async () => {},
     removeProjectName: async () => {},
     remoteAccess: remoteConfig,
+    mobileSettings: {
+      get: async () => ({}) as never,
+      update: async () => ({}) as never,
+      createToken: (label: string) => ({ label, token: 'secret-value-xxxxxxxxxxxxxxxxxxxx' }),
+      revokeToken: () => {},
+      restart: () => false,
+    },
+    accessSettings: {
+      get: () => ({ remoteEnabled: true, requireTokenLocally: true }),
+      setRequireTokenLocally: (require: boolean) => ({ remoteEnabled: true, requireTokenLocally: require }),
+    },
     promptRouter: promptRouter as never,
     tickets: {
       list: () => [],
@@ -165,6 +177,48 @@ describe('remote mode on — device token', () => {
   });
 });
 
+describe('mobile settings route', () => {
+  it('never mints or lists tokens for a device token', async () => {
+    const mint = await fetch(`${base}/api/settings/mobile/tokens`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...auth(DEVICE) },
+      body: JSON.stringify({ label: 'evil' }),
+    });
+    expect(mint.status).toBe(403);
+    expect((await fetch(`${base}/api/settings/mobile`, { headers: auth(DEVICE) })).status).toBe(403);
+  });
+
+  it('mints one for the local full-access caller', async () => {
+    const res = await fetch(`${base}/api/settings/mobile/tokens`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...auth(LOCAL) },
+      body: JSON.stringify({ label: 'phone' }),
+    });
+    expect(res.status).toBe(201);
+  });
+});
+
+describe('access settings route', () => {
+  it('refuses a device token, so a phone cannot stop this computer from needing one', async () => {
+    const res = await fetch(`${base}/api/settings/access`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...auth(DEVICE) },
+      body: JSON.stringify({ requireTokenLocally: false }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('lets the local full-access token read and change it', async () => {
+    expect((await (await fetch(`${base}/api/settings/access`, { headers: auth(LOCAL) })).json())).toEqual({ remoteEnabled: true, requireTokenLocally: true });
+    const res = await fetch(`${base}/api/settings/access`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...auth(LOCAL) },
+      body: JSON.stringify({ requireTokenLocally: false }),
+    });
+    expect(await res.json()).toEqual({ remoteEnabled: true, requireTokenLocally: false });
+  });
+});
+
 describe('remote mode on — local full-access token', () => {
   it('accepts the hook ingest route', async () => {
     onEvent.mockClear();
@@ -178,7 +232,8 @@ describe('remote mode on — local full-access token', () => {
   });
 
   it('reaches routes a device token cannot', async () => {
-    expect((await fetch(`${base}/api/fs/browse?dir=/tmp`, { headers: auth(LOCAL) })).status).toBe(200);
+    const dir = encodeURIComponent(tmpdir());
+    expect((await fetch(`${base}/api/fs/browse?dir=${dir}`, { headers: auth(LOCAL) })).status).toBe(200);
   });
 
   it('bootstraps the dashboard through ?token=', async () => {
@@ -213,11 +268,30 @@ describe('watch-level HTTP routes', () => {
   });
 })
 
+describe('GET /api/terminal/launch-options', () => {
+  it('reports the configured local model, or null', async () => {
+    vi.stubEnv('OA_LOCAL_MODEL', 'gemma4:12b-it-qat');
+    const res = await fetch(`${base}/api/terminal/launch-options`, { headers: auth(DEVICE) });
+    expect(await res.json()).toEqual({ localModel: { model: 'gemma4:12b-it-qat', provider: 'ollama' } });
+    vi.stubEnv('OA_LOCAL_MODEL', '');
+    const off = await fetch(`${base}/api/terminal/launch-options`, { headers: auth(DEVICE) });
+    expect(await off.json()).toEqual({ localModel: null });
+    vi.unstubAllEnvs();
+  });
+});
+
 describe('GET /api/remote/capabilities', () => {
   it('tells the device what this server will let it do', async () => {
     const res = await fetch(`${base}/api/remote/capabilities`, { headers: auth(DEVICE) });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ terminal: 'off', remote: true });
+  });
+
+  it('gives a full-access caller the whole terminal, as its socket already allows', async () => {
+    // The local token's WebSocket is not marked remote, so every terminal:* message
+    // goes through; reporting `off` here only hid the phone's Sessions tab from it.
+    const res = await fetch(`${base}/api/remote/capabilities`, { headers: auth(LOCAL) });
+    expect(await res.json()).toEqual({ terminal: 'shell', remote: true });
   });
 
   it('needs a token like everything else', async () => {

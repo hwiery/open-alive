@@ -22,6 +22,7 @@ import {
   type DisplayStatus,
 } from './ticketDisplay.ts';
 import { failureLine } from './failureLine.ts';
+import { ModelBadge } from '../../components/ModelBadge.tsx';
 
 interface TicketCardProps {
   ticket: Ticket;
@@ -67,7 +68,9 @@ export function TicketCard({ ticket, evaluation, onOpen }: TicketCardProps) {
           ? failureLine(ticket, t)
           : oneLineSummary(ticket) ?? t('tickets.noResult');
 
-  const meta = runMetaShort(ticket);
+  // The model is shown as a logo badge, so it is left out of the text meta.
+  const meta = runMetaShort(ticket, { withModel: false });
+  const cardModel = ticket.model ?? ticket.requestedModel;
 
   return (
     <div
@@ -240,10 +243,15 @@ export function TicketCard({ ticket, evaluation, onOpen }: TicketCardProps) {
             {evaluation.label === 'good' ? t('tickets.evalGood') : t('tickets.evalBad')}
           </span>
         )}
+        {cardModel && status !== 'complete' && status !== 'decision' && (
+          <span style={{ marginLeft: 'auto', fontSize: 10, opacity: isActive ? 0.95 : 0.7, minWidth: 0, display: 'inline-flex' }}>
+            <ModelBadge model={cardModel} size={11} />
+          </span>
+        )}
         {meta && status !== 'complete' && status !== 'decision' && (
           <span
             style={{
-              marginLeft: 'auto',
+              marginLeft: cardModel ? 0 : 'auto',
               fontSize: 10,
               fontFamily: 'var(--font-mono, monospace)',
               opacity: 0.5,

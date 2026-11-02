@@ -1,12 +1,12 @@
 import type { AgentInfo, AgentState, CompletedSession, ToolAnimation } from '../events/types.js';
 import type { AgentStats, EventLogEntry } from '../state/sessionStore.js';
-import type { EfficioStatus } from '../efficio/types.js';
 import type { Ticket } from '../tickets/types.js';
 import type { TicketEvaluation } from '../tickets/evaluation.js';
 import type { Run, RunTree } from '../runs/types.js';
 import type { UsageLimitsSnapshot } from '../usage/rateLimits.js';
 
-export type TerminalMode = 'claude' | 'shell';
+/** `claude` / `codex` start that agent CLI in a login shell; `shell` is a plain interactive shell. */
+export type TerminalMode = 'claude' | 'codex' | 'shell';
 export type TerminalSource = 'local' | 'ssh';
 
 export type SSHErrorKind =
@@ -72,7 +72,6 @@ export type WSServerMessage =
   // Broadcast when the set of resumable (dormant) sessions changes.
   | { type: 'sessions:resumable'; sessions: ResumableSession[] }
   | { type: 'project:names'; names: Record<string, string> }
-  | { type: 'efficio:update'; status: EfficioStatus }
   // Full ticket list, sent on demand (e.g. a newly connected client that opened
   // the Tickets view). Live changes ride on `ticket:update`.
   | { type: 'ticket:snapshot'; tickets: Ticket[] }
@@ -110,6 +109,8 @@ export type WSClientMessage =
       resumeSessionId?: string;
       /** Initial display name passed via `claude -n`. Appears in /resume picker and prompt. */
       displayName?: string;
+      /** Codex only: run on the server's local model (`OA_LOCAL_MODEL`, `codex --oss`). */
+      localModel?: boolean;
     }
   | { type: 'terminal:input'; tabId: string; data: string }
   | { type: 'terminal:resize'; tabId: string; cols: number; rows: number }

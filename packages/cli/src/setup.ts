@@ -20,7 +20,7 @@ import {
   writePrivateFile,
 } from '@open-alive/core';
 
-import { execFileSync } from 'node:child_process';
+import crossSpawn from 'cross-spawn';
 
 export { upsertEnvValue, readEnvKey, parseModelIds, buildModelsFile, writePrivateFile };
 
@@ -86,13 +86,11 @@ function createPrompter(assumeDefaults: boolean): Prompter {
   };
 }
 
+/** `<cmd> --version`, or null when it is not installed. cross-spawn: npm CLIs are `.cmd` shims on Windows. */
 function commandVersion(cmd: string): string | null {
-  try {
-    const out = execFileSync(cmd, ['--version'], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 });
-    return out.toString().trim().split('\n')[0] ?? '';
-  } catch {
-    return null;
-  }
+  const r = crossSpawn.sync(cmd, ['--version'], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000 });
+  if (r.error || r.status !== 0 || !r.stdout) return null;
+  return r.stdout.toString().trim().split('\n')[0] ?? '';
 }
 
 async function fetchModelIds(baseUrl: string, key: string): Promise<{ ids: string[] } | { error: string }> {
@@ -139,8 +137,6 @@ function checkPrerequisites(): void {
       ? `  ✓ Claude Code ${claude}`
       : '  ! Claude Code not found on PATH — install it first: https://docs.anthropic.com/en/docs/claude-code',
   );
-  const python = commandVersion('python3');
-  console.log(python !== null ? `  ✓ ${python} (Efficio self-evaluation)` : '  • python3 not found — optional, only Efficio needs it');
   console.log('');
 }
 
@@ -207,7 +203,8 @@ export async function runSetup(ctx: SetupContext): Promise<SetupResult> {
     writePrivateFile(ctx.envFile, envText);
     console.log(`  ✓ settings saved to ${ctx.envFile}`);
 
-    if (process.platform === 'darwin' && (await prompter.confirm('Start open-alive automatically at login? (macOS)', false))) {
+    const autostartOs = process.platform === 'darwin' ? 'macOS' : process.platform === 'win32' ? 'Windows' : null;
+    if (autostartOs && (await prompter.confirm(`Start open-alive automatically at login? (${autostartOs})`, false))) {
       ctx.enableAutostart();
     }
 

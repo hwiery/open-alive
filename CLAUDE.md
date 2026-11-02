@@ -28,7 +28,7 @@ pnpm --filter=@open-alive/server exec vitest run -t "테스트 이름"          
 ```
 
 - 패키지 간 import 는 `dist/` 를 참조한다. core/storage 등을 고친 뒤 의존 패키지를 테스트하려면 먼저 `pnpm build`.
-- CI(`.github/workflows/ci.yml`): ubuntu/macos × Node 20/22/24 에서 install --frozen-lockfile → build → UI tsc → test, 별도로 `pnpm audit`. `hwiery/open-alive` 에서만 실행(포크·미러는 `if: github.repository` 조건으로 건너뜀) — 다른 저장소의 러너 자원을 쓰지 않는다.
+- CI(`.github/workflows/ci.yml`): ubuntu/macos × Node 20/22/24 에서 install --frozen-lockfile → build → UI tsc → test, 별도로 `pnpm audit`. `must-goldenrod/open-alive` 에서만 실행(포크·미러는 `if: github.repository` 조건으로 건너뜀) — 다른 저장소의 러너 자원을 쓰지 않는다.
 - server 테스트는 `OA_DELEGATE_MODELS_FILE=builtin` 으로 고정 — 로컬 `~/.open-alive/models.json` 이 테스트에 영향을 주지 않게 한다.
 
 실제 `~/.claude/settings.json`·데이터를 건드리지 않고 소스에서 실행:
@@ -50,7 +50,6 @@ packages/
 ├── i18n/        # i18next 설정 + EN/KO 번역 파일
 ├── prompt-*/    # 프롬프트 수집·규칙·분석 (서버 프로세스 안에서 동작, tsup 빌드)
 └── ui/          # React 프론트엔드 (Vite)
-efficio/         # 세션 자기평가 (Python stdlib, 세션 종료 시 python3 로 실행)
 docs/adr/        # 아키텍처 결정 기록 (한국어) — 설계 변경 전 해당 ADR 확인
 npm/             # npm 번들 엔트리 (server-entry.ts)
 ```

@@ -54,15 +54,20 @@ export function createStaticHandler(uiDistPath?: string) {
       const data = await readFile(filePath);
       const ext = extname(filePath);
       const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
-      res.writeHead(200, { 'Content-Type': contentType });
+      res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': cacheControlFor(pathname, ext) });
       res.end(data);
       return true;
     } catch {
-      // File not found — try SPA fallback (serve index.html)
+      // A missing file under /assets/ is a stale reference — usually a page
+      // loaded before an update asking for the previous build's chunk. Answering
+      // it with index.html (200, text/html) made the browser refuse the "script"
+      // and left a blank screen; a real 404 lets the page recover by reloading.
+      if (isAssetPath(pathname)) return false;
+      // Other unknown paths are client-side routes: serve the SPA shell.
       if (pathname !== '/' && pathname !== '/index.html') {
         try {
           const indexData = await readFile(join(getDistDir(), 'index.html'));
-          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': NO_CACHE });
           res.end(indexData);
           return true;
         } catch {
@@ -73,4 +78,18 @@ export function createStaticHandler(uiDistPath?: string) {
       return false;
     }
   };
+}
+
+/** The shell must be revalidated every load so an update is picked up at once. */
+const NO_CACHE = 'no-cache';
+/** Vite emits content-hashed files under /assets/: safe to keep for good. */
+const IMMUTABLE = 'public, max-age=31536000, immutable';
+
+function isAssetPath(pathname: string): boolean {
+  return pathname.startsWith('/assets/');
+}
+
+export function cacheControlFor(pathname: string, ext: string): string {
+  if (ext === '.html') return NO_CACHE;
+  return isAssetPath(pathname) ? IMMUTABLE : NO_CACHE;
 }

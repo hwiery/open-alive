@@ -5,16 +5,14 @@ import type { ViewMode } from '../App.tsx';
  * belongs to which tier". HeaderBar only renders this — it never re-decides
  * grouping.
  *
- * - primary: the ticket hub — the default surface you live in.
- * - monitor: live observation surfaces you drop into when a ticket needs a
- *            closer look or direct intervention (animation, list, spread).
- * - tools:   analysis + productivity surfaces used alongside the main flow
- *            (board first — it holds work/cost analytics — then workspace).
- *
- * All three tiers are rendered inline in the header (no dropdown, no visible
- * group caption) so every surface is one click away and self-describing.
+ * The header reads as two views — Tickets and Terminal — and the terminal has
+ * three layouts (internal ids kept so saved state and links still resolve):
+ * - window (`animation`): a resizable terminal window over the pixel office.
+ * - split  (`spread`):    every terminal tiled side by side.
+ * - full   (`list`):      one terminal covering the whole body.
+ * Cost (internal id `board`) is a tool, shown on the right next to usage.
  */
-export type ViewGroup = 'primary' | 'monitor' | 'tools';
+export type ViewGroup = 'primary' | 'terminal' | 'tools';
 
 export interface ViewModeMeta {
   mode: ViewMode;
@@ -24,14 +22,17 @@ export interface ViewModeMeta {
 
 const LEGACY_BOARD_MODES: ReadonlySet<ViewMode> = new Set([
   'prompt',
-  'efficio',
   'archive',
   'ticketMgmt',
   'data',
 ]);
 
-/** Keep legacy links usable after their standalone content views moved into Board. */
+/**
+ * Keep legacy links usable: standalone analytics views moved into Cost
+ * (`board`), and the removed workspace view falls back to tickets.
+ */
 export function normalizeViewMode(mode: ViewMode): ViewMode {
+  if (mode === 'workspace') return 'tickets';
   return LEGACY_BOARD_MODES.has(mode) ? 'board' : mode;
 }
 
@@ -41,11 +42,11 @@ export function normalizeViewMode(mode: ViewMode): ViewMode {
  */
 export const VIEW_MODE_META: readonly ViewModeMeta[] = [
   { mode: 'tickets', labelKey: 'viewMode.tickets', group: 'primary' },
-  { mode: 'animation', labelKey: 'viewMode.animation', group: 'monitor' },
-  { mode: 'list', labelKey: 'viewMode.list', group: 'monitor' },
-  { mode: 'spread', labelKey: 'viewMode.spread', group: 'monitor' },
-  { mode: 'board', labelKey: 'viewMode.board', group: 'tools' },
-  { mode: 'workspace', labelKey: 'viewMode.workspace', group: 'tools' },
+  { mode: 'animation', labelKey: 'viewMode.layout.window', group: 'terminal' },
+  { mode: 'spread', labelKey: 'viewMode.layout.split', group: 'terminal' },
+  { mode: 'list', labelKey: 'viewMode.layout.full', group: 'terminal' },
+  // Internal id `board` kept for saved state; the view is now cost analytics only.
+  { mode: 'board', labelKey: 'viewMode.cost', group: 'tools' },
   // `backends` (backend connection) moved into the Settings modal (backend tab),
   // so it is no longer a standalone tools view.
 ];
@@ -58,4 +59,12 @@ export function viewsInGroup(group: ViewGroup): ViewModeMeta[] {
 /** The group a view belongs to, or undefined if it is not surfaced in the header. */
 export function groupOf(mode: ViewMode): ViewGroup | undefined {
   return VIEW_MODE_META.find((m) => m.mode === mode)?.group;
+}
+
+/** The terminal layout to show when the user picks "Terminal" without choosing one. */
+export const DEFAULT_TERMINAL_VIEW: ViewMode = 'animation';
+
+/** True for the three terminal layouts. */
+export function isTerminalView(mode: ViewMode): boolean {
+  return groupOf(mode) === 'terminal';
 }

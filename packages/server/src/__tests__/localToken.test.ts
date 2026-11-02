@@ -33,7 +33,8 @@ describe('ensureLocalToken', () => {
   it('locks the file down to the owner — the token is the local trust boundary', () => {
     const d = deps();
     ensureLocalToken('/env', {}, d);
-    expect(d.state.mode).toBe(0o600);
+    // POSIX permission bits; Windows has no equivalent mode.
+    if (process.platform !== 'win32') expect(d.state.mode).toBe(0o600);
   });
 
   it('keeps a trailing newline rather than gluing onto the previous line', () => {

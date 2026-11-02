@@ -29,6 +29,8 @@
   --on-accent: #0d1117;
   /* Phone secondary text — one step brighter than --text-secondary. */
   --text-muted-strong: #a9b4c0;
+  /* Defined in both modes: some call sites use it without a fallback. */
+  --text-tertiary: #8b949e;
   /* Translucent floating frames (terminal overlay, toasts) and the opaque variant. */
   --frame-bg: rgba(13, 17, 23, 0.92);
   --frame-bg-solid: rgba(13, 17, 23, 0.96);

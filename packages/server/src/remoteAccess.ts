@@ -14,6 +14,7 @@
  * loopback trusted while remote mode is on is possible, but it has to be asked
  * for by name (`OPEN_ALIVE_TRUST_LOOPBACK=1`).
  */
+import { splitPathList } from '@open-alive/core';
 import { timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 import {
@@ -176,11 +177,16 @@ const REMOTE_ROUTES: ReadonlyArray<{ method: string; pattern: RegExp }> = [
   { method: 'POST', pattern: /^\/api\/tickets$/ },
   { method: 'POST', pattern: /^\/api\/tickets\/[^/]+\/(cancel|retry|reply)$/ },
   { method: 'GET', pattern: /^\/api\/evaluations$/ },
+  // Which model each ticket preset runs on (model ids only) for the compose form.
+  { method: 'GET', pattern: /^\/api\/claude\/models$/ },
+  { method: 'GET', pattern: /^\/api\/codex\/models$/ },
   { method: 'GET', pattern: /^\/api\/remote\/projects$/ },
   { method: 'GET', pattern: /^\/api\/remote\/branches$/ },
   // What this server will let the device do. Without it the app cannot tell a
   // refused message from a broken connection — both are silence on the socket.
   { method: 'GET', pattern: /^\/api\/remote\/capabilities$/ },
+  // Launch presets for the phone's new-terminal dialog (local model name only).
+  { method: 'GET', pattern: /^\/api\/terminal\/launch-options$/ },
   // The live stream. Read-only for a device: `terminal:*` is refused per
   // connection in wsAuth, not here, because the allowlist is path-shaped.
   { method: 'GET', pattern: /^\/ws$/ },
@@ -290,6 +296,18 @@ function isShellPath(method: string, pathname: string): boolean {
  * for tunnelled remote callers. With remote mode on, loopback buys nothing
  * unless `trustLoopback` was set on purpose.
  */
+const LOOPBACK_HOST_NAMES: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/** `Host: localhost:3141` / `127.0.0.1` / `[::1]:3141` — not a rebound public name. */
+export function isLoopbackHostHeader(host: string | string[] | undefined): boolean {
+  if (typeof host !== 'string' || host.length === 0) return false;
+  try {
+    return LOOPBACK_HOST_NAMES.has(new URL(`http://${host}`).hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function authorizeRequest(
   input: AuthorizeInput,
   config: RemoteAccessConfig,
@@ -302,7 +320,11 @@ export function authorizeRequest(
     return loopback ? { kind: 'local' } : { kind: 'untrusted' };
   }
 
-  if (config.trustLoopback && loopback) return { kind: 'local' };
+  // Trusting loopback also needs a loopback Host header. Without it a page on
+  // any site could DNS-rebind its own name to 127.0.0.1: the browser then sends
+  // same-origin requests (no cross-site signal) from this machine, and they
+  // would be treated as local with full access — e.g. minting a device token.
+  if (config.trustLoopback && loopback && isLoopbackHostHeader(input.headers.host)) return { kind: 'local' };
 
   const key = input.remoteAddress ?? 'unknown';
   if (limiter?.locked(key)) {
@@ -365,7 +387,7 @@ export function loadRemoteAccessConfig(env: NodeJS.ProcessEnv): ConfigResult {
   }
 
   const tokens = parseTokens(env);
-  const ticketRoots = (env.OPEN_ALIVE_TICKET_ROOTS ?? '').split(':').map((s) => s.trim()).filter(Boolean);
+  const ticketRoots = splitPathList(env.OPEN_ALIVE_TICKET_ROOTS);
   const sshHosts = (env.OPEN_ALIVE_REMOTE_SSH_HOSTS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 
   if (enabled) {

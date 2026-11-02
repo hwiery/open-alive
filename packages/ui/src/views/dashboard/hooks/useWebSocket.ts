@@ -49,7 +49,16 @@ export function useWebSocket(url: string, onRawMessage?: (msg: WSServerMessage) 
     // The token rides the subprotocol: a browser cannot set a header on a
     // socket, and a remote-mode server refuses an unauthenticated upgrade.
     const protocols = wsProtocols();
-    const ws = protocols ? new WebSocket(url, protocols) : new WebSocket(url);
+    let ws: WebSocket;
+    try {
+      ws = protocols ? new WebSocket(url, protocols) : new WebSocket(url);
+    } catch (error) {
+      // The browser refused the handshake arguments (e.g. a malformed token
+      // subprotocol). Connect without them instead of taking the app down; a
+      // server that needs a token answers 401 and the token prompt takes over.
+      console.warn('[ws] could not open with auth protocol, retrying without it', error);
+      ws = new WebSocket(url);
+    }
     wsRef.current = ws;
 
     ws.onopen = () => {

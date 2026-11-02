@@ -32,9 +32,27 @@ function browserStorage(): TokenStorage | null {
   }
 }
 
+/**
+ * What a token may contain. Generated tokens are base64url; the value also
+ * travels as a WebSocket subprotocol, where a space, a non-ASCII character or
+ * most punctuation makes the browser throw ("An invalid or illegal string was
+ * specified") and the whole app stops before it renders.
+ */
+const TOKEN_PATTERN = /^[A-Za-z0-9._~-]{1,512}$/;
+
+export function isValidToken(token: string): boolean {
+  return TOKEN_PATTERN.test(token);
+}
+
 export function readStoredToken(storage: TokenStorage | null = browserStorage()): string | null {
   try {
-    return storage?.getItem(TOKEN_STORAGE_KEY) ?? null;
+    const token = storage?.getItem(TOKEN_STORAGE_KEY) ?? null;
+    if (token !== null && !isValidToken(token)) {
+      // Left over from an earlier paste: unusable, and fatal to the WebSocket.
+      storage?.removeItem(TOKEN_STORAGE_KEY);
+      return null;
+    }
+    return token;
   } catch {
     return null;
   }
@@ -42,7 +60,7 @@ export function readStoredToken(storage: TokenStorage | null = browserStorage())
 
 export function storeToken(token: string | null, storage: TokenStorage | null = browserStorage()): void {
   try {
-    if (token) storage?.setItem(TOKEN_STORAGE_KEY, token);
+    if (token && isValidToken(token)) storage?.setItem(TOKEN_STORAGE_KEY, token);
     else storage?.removeItem(TOKEN_STORAGE_KEY);
   } catch {
     // Storage denied: the token still works for this page load, held by the
@@ -68,13 +86,20 @@ export function adoptUrlToken(
   history: History = window.history,
   storage: TokenStorage | null = browserStorage(),
 ): string | null {
+  // `#token=` (the mobile QR) never reaches the server or its logs; `?token=`
+  // is what `open-alive start` opens with. Both are adopted and stripped.
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
   const params = new URLSearchParams(location.search);
-  const token = params.get('token');
+  const fromHash = hash.get('token');
+  const fromQuery = params.get('token');
+  const token = fromHash ?? fromQuery;
   if (!token) return readStoredToken(storage);
   storeToken(token, storage);
   params.delete('token');
+  hash.delete('token');
   const query = params.toString();
-  history.replaceState(null, '', `${location.pathname}${query ? `?${query}` : ''}${location.hash}`);
+  const rest = hash.toString();
+  history.replaceState(null, '', `${location.pathname}${query ? `?${query}` : ''}${rest ? `#${rest}` : ''}`);
   return token;
 }
 
@@ -83,7 +108,7 @@ export function adoptUrlToken(
  * subprotocol list; the server echoes it back to complete the handshake.
  */
 export function wsProtocols(token: string | null = readStoredToken()): string[] | undefined {
-  return token ? [`${WS_TOKEN_PROTOCOL_PREFIX}${token}`] : undefined;
+  return token && isValidToken(token) ? [`${WS_TOKEN_PROTOCOL_PREFIX}${token}`] : undefined;
 }
 
 /**

@@ -24,7 +24,7 @@
     "@open-alive/core": "workspace:*",
     "@open-alive/prompt-core": "workspace:*",
     "@open-alive/prompt-rules": "workspace:*",
-    "fastify": "^5.12.1"
+    "fastify": "^5.12.5"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

@@ -1,7 +1,6 @@
-import type { AgentInfo, ResumableSession } from '@open-alive/core';
+import type { AgentInfo } from '@open-alive/core';
 import type { SshSessionInfo } from '../chat/ChatOverlay.tsx';
 import { ProjectSidebar } from '../unified/ProjectSidebar.tsx';
-import { SessionDashboardView } from './SessionDashboardView.tsx';
 
 interface AgentListViewProps {
   agents: AgentInfo[];
@@ -11,7 +10,6 @@ interface AgentListViewProps {
   onProjectNameChange?: (cwd: string, name: string | null) => void;
   selectedSessionId?: string | null;
   chatClaudeSessionIds?: Set<string>;
-  resumableSessions?: ResumableSession[];
 }
 
 /**
@@ -28,7 +26,6 @@ export function AgentListView({
   onProjectNameChange,
   selectedSessionId,
   chatClaudeSessionIds,
-  resumableSessions = [],
 }: AgentListViewProps) {
   return (
     <div style={{ display: 'flex', height: '100%', width: '100%', overflow: 'hidden' }}>
@@ -46,15 +43,6 @@ export function AgentListView({
             new CustomEvent('terminal:focusTab', { detail: { sessionId } }),
           )
         }
-      />
-      {/* Session dashboard. The fixed-position ChatOverlay covers this region while a
-          terminal tab is open; when no tab is open the overlay hides itself (opacity 0)
-          and this dashboard shows through, listing live and resumable sessions. */}
-      <SessionDashboardView
-        agents={agents}
-        resumableSessions={resumableSessions}
-        openSessionIds={chatClaudeSessionIds ?? new Set()}
-        projectNames={projectNames}
       />
     </div>
   );

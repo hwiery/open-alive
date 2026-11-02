@@ -68,7 +68,8 @@ describe('parseModelIds / buildModelsFile', () => {
 });
 
 describe('writePrivateFile', () => {
-  it('writes 0600 and refuses a planted symlink, even a dangling one', async () => {
+  // POSIX modes and unprivileged symlinks; neither exists on Windows.
+  it.skipIf(process.platform === 'win32')('writes 0600 and refuses a planted symlink, even a dangling one', async () => {
     const { mkdtempSync, symlinkSync, statSync, readFileSync, existsSync } = await import('node:fs');
     const { join } = await import('node:path');
     const { tmpdir } = await import('node:os');

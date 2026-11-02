@@ -1,7 +1,7 @@
 import type { HookEventPayload } from '@open-alive/core';
 
 export interface SpawnPlaceholderInput {
-  mode?: 'claude' | 'shell';
+  mode?: 'claude' | 'codex' | 'shell';
   claudeVariant?: 'claude' | 'agents';
   claudeSessionId?: string;
   resumeSessionId?: string;

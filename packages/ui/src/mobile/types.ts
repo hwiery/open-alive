@@ -6,7 +6,7 @@
  * type argument as untranslated UI text. The same convention is used by
  * `views/tickets/useTickets.ts`.
  */
-import type { TicketLocation, TicketRunPreset } from '@open-alive/core';
+import type { TicketLocation } from '@open-alive/core';
 
 export interface MobileProject {
   path: string;
@@ -19,7 +19,10 @@ export interface MobileTicketDraft {
   cwd: string;
   location?: TicketLocation;
   orchestrated: boolean;
-  preset: TicketRunPreset;
+  /** Full model id (Claude, or Codex for a local run). */
+  model: string;
+  /** Run profile = reasoning effort. */
+  effort: string;
   autoCommit: boolean;
   panelReview: boolean;
 }

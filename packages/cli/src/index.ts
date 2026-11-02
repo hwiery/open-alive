@@ -15,8 +15,8 @@ import {
 import { randomBytes } from 'node:crypto';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawn, execFileSync, execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn, execFileSync } from 'node:child_process';
+import crossSpawn from 'cross-spawn';
 import {
   readFileSync,
   writeFileSync,
@@ -28,6 +28,7 @@ import {
 import { homedir } from 'node:os';
 import { runSetup, resolvePort, writePrivateFile } from './setup.js';
 import { isPortInUse } from './portCheck.js';
+import { windowsStartupScript } from './windowsStartup.js';
 
 const ALIVE_DIR = join(homedir(), '.open-alive');
 const PID_FILE = join(ALIVE_DIR, 'server.pid');
@@ -178,9 +179,36 @@ function tryRun(cmd: string, args: string[]): boolean {
   }
 }
 
+/** Windows: a `.cmd` in the user's Startup folder runs `open-alive start` at login. */
+const WINDOWS_STARTUP_FILE = join(
+  process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'),
+  'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'open-alive.cmd',
+);
+
+function windowsAutostart(sub: 'enable' | 'disable' | 'status'): void {
+  if (sub === 'enable') {
+    mkdirSync(dirname(WINDOWS_STARTUP_FILE), { recursive: true });
+    writeFileSync(WINDOWS_STARTUP_FILE, windowsStartupScript(process.execPath, resolve(process.argv[1] ?? '')), 'utf-8');
+    console.log(`  ✓ open-alive starts at login (${WINDOWS_STARTUP_FILE})`);
+  } else if (sub === 'disable') {
+    if (existsSync(WINDOWS_STARTUP_FILE)) {
+      unlinkSync(WINDOWS_STARTUP_FILE);
+      console.log('  ✓ open-alive autostart removed');
+    } else {
+      console.log('  • open-alive autostart not installed');
+    }
+  } else {
+    console.log(`  open-alive autostart: installed=${existsSync(WINDOWS_STARTUP_FILE)}`);
+  }
+}
+
 function openAliveAutostart(sub: 'enable' | 'disable' | 'status'): void {
+  if (process.platform === 'win32') {
+    windowsAutostart(sub);
+    return;
+  }
   if (process.platform !== 'darwin') {
-    console.log('  • open-alive autostart plist: skipped (macOS only)');
+    console.log('  • open-alive autostart plist: skipped (macOS and Windows only)');
     return;
   }
   mkdirSync(`${homedir()}/Library/LaunchAgents`, { recursive: true });
@@ -234,6 +262,22 @@ function openBrowser(url: string): void {
   }
 }
 
+/** True when `url` is served by an open-alive server (answers /api/status like ours). */
+async function isOpenAliveServer(url: string): Promise<boolean> {
+  try {
+    const token = localToken();
+    const res = await fetch(`${url}/api/status`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!res.ok) return false;
+    const body = (await res.json()) as { status?: unknown };
+    return body.status === 'running';
+  } catch {
+    return false;
+  }
+}
+
 /** Start the server detached and open the dashboard (`start`, and the end of `setup`). */
 async function startServer(argv: readonly string[]): Promise<void> {
   // `--no-open` skips auto-launching the browser. Default is to open: most
@@ -256,6 +300,14 @@ async function startServer(argv: readonly string[]): Promise<void> {
     return;
   }
   if (await isPortInUse(Number(port))) {
+    // A server without our PID file is usually the autostart (launchd) one —
+    // if the port answers like open-alive, treat it as already running.
+    if (await isOpenAliveServer(url)) {
+      console.log('open-alive server is already running (autostart).');
+      console.log(`  Dashboard: ${url}`);
+      if (!noOpen) openBrowser(url);
+      return;
+    }
     console.error(`✗ Port ${port} is already in use by another program.`);
     console.error('  Stop that program, or pick another port: OPEN_ALIVE_PORT=<port> in ~/.open-alive/.env');
     console.error('  (re-run "open-alive setup" to change it; hooks read the same file).');
@@ -264,8 +316,9 @@ async function startServer(argv: readonly string[]): Promise<void> {
   }
   mkdirSync(ALIVE_DIR, { recursive: true });
   const logFd = openSync(LOG_FILE, 'a');
-  const child = spawn('node', [serverEntryPath()], {
+  const child = spawn(process.execPath, [serverEntryPath()], {
     detached: true,
+    windowsHide: true,
     stdio: ['ignore', logFd, logFd],
     env: {
       ...process.env,
@@ -462,19 +515,21 @@ switch (command) {
   }
 
   case 'doctor': {
-    const execFileAsync = promisify(execFile);
     // Probe with the same augmented PATH the server uses to spawn runtimes;
     // under launchd the inherited PATH is minimal and would yield false ENOENTs.
     const probeEnv = { ...process.env, PATH: augmentPath(process.env.PATH) };
     /** Probe a runtime binary; a missing binary rejects with ENOENT → not installed. */
+    // cross-spawn so `claude.cmd` / `codex.cmd` shims resolve on Windows.
     const runner: CommandRunner = async (cmd, args) => {
-      try {
-        const { stdout } = await execFileAsync(cmd, args, { timeout: 5_000, env: probeEnv });
-        return { ok: true, stdout };
-      } catch (error) {
-        const err = error as NodeJS.ErrnoException;
-        return { ok: false, stdout: '', error: err?.message ?? String(error), code: err?.code };
+      const r = crossSpawn.sync(cmd, [...args], { timeout: 5_000, env: probeEnv, stdio: ['ignore', 'pipe', 'pipe'] });
+      if (r.error) {
+        const err = r.error as NodeJS.ErrnoException;
+        return { ok: false, stdout: '', error: err.message, code: err.code };
       }
+      if (r.status !== 0) {
+        return { ok: false, stdout: r.stdout?.toString() ?? '', error: r.stderr?.toString().trim() || `exit ${r.status}` };
+      }
+      return { ok: true, stdout: r.stdout?.toString() ?? '' };
     };
     const report = await runDoctor(DEFAULT_RUNTIME_PROBES, runner, Date.now());
     if (process.argv.includes('--json')) {

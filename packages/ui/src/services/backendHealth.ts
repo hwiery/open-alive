@@ -1,3 +1,4 @@
+import { CLAUDE_MODELS_CHANGED_EVENT } from '../hooks/useClaudeModels.ts';
 import type { BackendStatus } from '@open-alive/core';
 
 /**
@@ -7,7 +8,10 @@ import type { BackendStatus } from '@open-alive/core';
  * kind (SSH) is validated per-host at ticket time by design, so a startup sweep
  * would be both heavy and semantically wrong. A backend counts as a failure only
  * when the server reports `connected === false`; `undefined` means "not probed".
+ * Codex is an optional second engine: its absence is not a failure, so it is only
+ * checked by the onboarding's connect step, never by this sweep.
  */
+const OPTIONAL_BACKENDS = new Set(['codex-local']);
 const API_BASE = `${window.location.protocol}//${window.location.hostname}:${window.location.port || '3141'}`;
 
 export interface BackendFailure {
@@ -23,21 +27,25 @@ export async function checkBackendHealth(): Promise<BackendFailure[]> {
   const data = (await res.json()) as { backends?: BackendStatus[] };
   const backends = data.backends ?? [];
 
-  const probes = backends
-    .filter((b) => b.kind !== 'location')
-    .map(async (b): Promise<BackendFailure | null> => {
-      try {
-        const r = await fetch(`${API_BASE}/api/backends/${b.id}/check`, { method: 'POST' });
-        if (!r.ok) return { id: b.id, label: b.label, detail: `check failed (${r.status})` };
-        const { status } = (await r.json()) as { status: BackendStatus };
-        return status.connected === false
-          ? { id: status.id, label: status.label, detail: status.detail }
-          : null;
-      } catch {
-        return { id: b.id, label: b.label, detail: 'connection failed' };
-      }
-    });
-
-  const results = await Promise.all(probes);
+  // Claude first: it is the base connection, and its check refreshes the model
+  // map other screens read. The optional backends are probed together after it.
+  const probe = async (b: BackendStatus): Promise<BackendFailure | null> => {
+    try {
+      const r = await fetch(`${API_BASE}/api/backends/${b.id}/check`, { method: 'POST' });
+      if (!r.ok) return { id: b.id, label: b.label, detail: `check failed (${r.status})` };
+      const { status } = (await r.json()) as { status: BackendStatus };
+      if (status.id === 'claude-local' && status.connected) window.dispatchEvent(new CustomEvent(CLAUDE_MODELS_CHANGED_EVENT));
+      return status.connected === false
+        ? { id: status.id, label: status.label, detail: status.detail }
+        : null;
+    } catch {
+      return { id: b.id, label: b.label, detail: 'connection failed' };
+    }
+  };
+  const connectable = backends.filter((b) => b.kind !== 'location' && !OPTIONAL_BACKENDS.has(b.id));
+  const claude = connectable.filter((b) => b.id === 'claude-local');
+  const rest = connectable.filter((b) => b.id !== 'claude-local');
+  const first = await Promise.all(claude.map(probe));
+  const results = [...first, ...(await Promise.all(rest.map(probe)))];
   return results.filter((f): f is BackendFailure => f !== null);
 }

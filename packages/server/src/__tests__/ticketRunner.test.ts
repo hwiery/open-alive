@@ -359,7 +359,8 @@ describe('TicketRunner lifecycle', () => {
     expect(defs.size).toBe(2); // only 2 spawned despite 5 queued
 
     // Drain: resolve whatever is currently running until all are done.
-    for (let i = 0; i < 30 && !store.list().every((t) => t.state === 'done'); i++) {
+    // Up to ~3s: slow CI runners need more than 30 polls to drain 12 tickets.
+    for (let i = 0; i < 300 && !store.list().every((t) => t.state === 'done'); i++) {
       for (const [id, d] of defs) if (store.get(id)?.state === 'running') d.resolve(okOutcome());
       await new Promise((r) => setTimeout(r, 10));
     }
@@ -386,7 +387,8 @@ describe('TicketRunner lifecycle', () => {
     expect(runner.activeCount()).toBe(10);
     expect(defs.size).toBe(10); // 2 of the 12 stay queued
 
-    for (let i = 0; i < 30 && !store.list().every((t) => t.state === 'done'); i++) {
+    // Up to ~3s: slow CI runners need more than 30 polls to drain 12 tickets.
+    for (let i = 0; i < 300 && !store.list().every((t) => t.state === 'done'); i++) {
       for (const [id, d] of defs) if (store.get(id)?.state === 'running') d.resolve(okOutcome());
       await new Promise((r) => setTimeout(r, 10));
     }

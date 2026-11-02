@@ -6,7 +6,6 @@ import { useTickets } from './useTickets.ts';
 import { TicketCard } from './TicketCard.tsx';
 import { NewTicketForm } from './NewTicketForm.tsx';
 import { TicketDetailModal } from './TicketDetailModal.tsx';
-import { TodoList } from '../unified/TodoList.tsx';
 import { displayStatus, STATUS_COLOR, type DisplayStatus } from './ticketDisplay.ts';
 import { filterTicketsBySelection, selectedTarget, type RepoLocationRef, type RunLocationRef, type WorktreeLocationRef } from './ticketFilter.ts';
 import type { Selection } from '../../state/selection.ts';
@@ -29,12 +28,14 @@ interface TicketsViewProps {
   leftInset: number;
   /** While the board is open it owns "open ticket"; the modal must not pop up later. */
   boardActive?: boolean;
+  /** Folders sessions are running in now, offered first in the folder picker. */
+  activeFolders?: readonly string[];
 }
 
 const COLUMNS: DisplayStatus[] = ['active', 'decision', 'complete', 'closed', 'failed'];
 
 export function TicketsView({
-  active, subscribeRaw, selection, runs, worktrees, repositories, primaryWorktreeIds, leftInset, boardActive = false,
+  active, subscribeRaw, selection, runs, worktrees, repositories, primaryWorktreeIds, boardActive = false, activeFolders,
 }: TicketsViewProps) {
   const { t } = useTranslation();
   const { tickets, evaluations, createTicket, retryTicket, replyTicket, cancelTicket, deleteTicket, evaluateTicket } = useTickets(active, subscribeRaw);
@@ -94,14 +95,6 @@ export function TicketsView({
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: 24, boxSizing: 'border-box' }}>
-      {/* Detached To-do dock: fixed so it floats independently of the centered
-          composer/board frame — it must not push or reflow the existing layout.
-          It starts past the repo sidebar rather than at the viewport edge, or it
-          would sit on top of it. Lives inside TicketsView so it inherits the
-          view's display toggle (hidden on other tabs automatically). */}
-      <div style={{ position: 'fixed', top: 72, left: leftInset + 24, width: 300, zIndex: 20 }}>
-        <TodoList />
-      </div>
       <div style={{ maxWidth: 1280, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
         {/* Center-focused composer: a ChatGPT-style hero prompt over a
             half-width input, so the "what to solve" question leads the view
@@ -130,7 +123,7 @@ export function TicketsView({
           >
             {t('tickets.heroPrompt')}
           </h1>
-          <NewTicketForm onCreate={createTicket} presetCwd={presetCwd} presetLocation={presetLocation} />
+          <NewTicketForm onCreate={createTicket} presetCwd={presetCwd} presetLocation={presetLocation} activeFolders={activeFolders} />
         </div>
 
         {/* Board region: a single bordered surface holds the four status lanes.

@@ -20,8 +20,6 @@ export interface Tab {
   claudeSessionId?: string;
   /** Terminal mode — needed to persist & resume the tab across reloads. */
   mode?: TerminalMode;
-  /** Claude entrypoint variant — persisted for resume. */
-  claudeVariant?: 'claude' | 'agents';
   /** Display name passed via `claude -n` — persisted for resume. */
   displayName?: string;
   /** True when the server has no live pty for this tab (post-restart); awaiting resume. */
@@ -218,24 +216,27 @@ export function TerminalTabBar({
                 </span>
               )}
             </span>
-            {tabs.length > 1 && (
-              <span
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onClose(tab.id);
-                }}
-                style={{
-                  fontSize: 10,
-                  lineHeight: 1,
-                  padding: '1px 3px',
-                  borderRadius: 3,
-                  opacity: 0.5,
-                  cursor: 'pointer',
-                }}
-              >
-                ✕
-              </span>
-            )}
+            {/* Every tab, including the last one, can be closed; with none left
+                the overlay falls back to its empty state. */}
+            <span
+              role="button"
+              aria-label={t('terminal.closeTab')}
+              title={t('terminal.closeTab')}
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose(tab.id);
+              }}
+              style={{
+                fontSize: 10,
+                lineHeight: 1,
+                padding: '1px 3px',
+                borderRadius: 3,
+                opacity: 0.5,
+                cursor: 'pointer',
+              }}
+            >
+              ✕
+            </span>
           </div>
         );
       })}

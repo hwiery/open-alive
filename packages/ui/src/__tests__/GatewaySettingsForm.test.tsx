@@ -52,7 +52,10 @@ describe('GatewaySettingsForm', () => {
     });
     render(<GatewaySettingsForm active />);
     fireEvent.click(await screen.findByRole('button', { name: 'Ollama' }));
-    expect(screen.getByLabelText(/URL/)).toHaveValue('http://localhost:11434');
+    // Picking a provider only hints; the user enters their own endpoint.
+    expect(screen.getByLabelText(/URL/)).toHaveValue('');
+    expect((screen.getByLabelText(/URL/) as HTMLInputElement).placeholder).toContain('http://localhost:11434');
+    fireEvent.change(screen.getByLabelText(/URL/), { target: { value: 'http://localhost:11434' } });
 
     fireEvent.click(screen.getByRole('button', { name: /테스트|Test/ }));
     expect(await screen.findByTestId('gateway-test-result')).toHaveTextContent('2');
@@ -62,6 +65,16 @@ describe('GatewaySettingsForm', () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/api/settings/gateway'))).toBe(true));
     const saveCall = calls.find((c) => c.method === 'POST' && c.url.endsWith('/api/settings/gateway'));
     expect(saveCall?.body).toEqual({ baseUrl: 'http://localhost:11434', defaultModel: 'm2', writeModels: true });
+  });
+
+  it('never prefills an endpoint and offers OmniRoute', async () => {
+    stubFetch({ 'GET /api/settings/gateway': { body: { ...saved, baseUrl: null, hasKey: false, keyHint: null, active: false } } });
+    render(<GatewaySettingsForm active />);
+    for (const name of ['LiteLLM', 'OpenRouter', 'OmniRoute', 'Ollama']) {
+      fireEvent.click(await screen.findByRole('button', { name }));
+      expect(screen.getByLabelText(/URL/)).toHaveValue('');
+      expect(screen.getByRole('button', { name })).toHaveAttribute('aria-pressed', 'true');
+    }
   });
 
   it('explains that remote devices cannot change the gateway', async () => {

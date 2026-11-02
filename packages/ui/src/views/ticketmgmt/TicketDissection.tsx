@@ -148,7 +148,7 @@ export function TicketDissection({ record, guideRefreshKey, onLabel, onReflect }
                 style={{
                   width: 28, height: 28, borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600,
                   background: weight === w ? 'var(--accent-blue)' : 'var(--bg-card)',
-                  color: weight === w ? '#fff' : 'var(--text-secondary)',
+                  color: weight === w ? 'var(--on-accent)' : 'var(--text-secondary)',
                   border: '1px solid var(--border-color)',
                 }}
               >

@@ -6,8 +6,13 @@ import {
   extractJsonObject,
   readString,
   resolvePanelModels,
+  configuredPanelModels,
   DEFAULT_PANEL_MODELS,
 } from '../panel/litellmPanel.js';
+import { reloadDelegateCatalog } from '../orchestrator/delegateModels.js';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { LitellmClient } from '../orchestrator/litellmClient.js';
 
 function stubClient(answers: Record<string, string | Error>): LitellmClient {
@@ -58,6 +63,30 @@ describe('resolvePanelModels', () => {
   });
   it('splits and trims an override', () => {
     expect(resolvePanelModels({ OA_PANEL_MODELS: 'a, b ,c' })).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('configuredPanelModels', () => {
+  it('returns null while only the placeholder catalogue is loaded', () => {
+    expect(configuredPanelModels({})).toBeNull();
+  });
+  it('prefers OA_PANEL_MODELS', () => {
+    expect(configuredPanelModels({ OA_PANEL_MODELS: 'x,y' })).toEqual(['x', 'y']);
+  });
+  it('uses panelModels, else the first three models of a user catalogue', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'panel-roster-'));
+    const file = join(dir, 'models.json');
+    try {
+      writeFileSync(file, JSON.stringify({ models: [{ id: 'text-embedding-3' }, { id: 'm1' }, { id: 'm2' }, { id: 'whisper-1' }, { id: 'm3' }, { id: 'm4' }] }));
+      reloadDelegateCatalog({ OA_DELEGATE_MODELS_FILE: file });
+      expect(configuredPanelModels({})).toEqual(['m1', 'm2', 'm3']);
+      writeFileSync(file, JSON.stringify({ models: [{ id: 'm1' }], panelModels: ['p1', 'p2'] }));
+      reloadDelegateCatalog({ OA_DELEGATE_MODELS_FILE: file });
+      expect(configuredPanelModels({})).toEqual(['p1', 'p2']);
+    } finally {
+      reloadDelegateCatalog({ OA_DELEGATE_MODELS_FILE: 'builtin' });
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

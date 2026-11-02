@@ -240,6 +240,17 @@ function logDelegation(o: {
 }
 
 /**
+ * Wrapper script text. POSIX: a `sh` script. Windows: a `.cmd` batch file —
+ * `oa-delegate` then resolves through PATHEXT, and `%*` forwards the arguments.
+ */
+export function delegateWrapper(target: string, platform: NodeJS.Platform = process.platform): { name: string; text: string } {
+  if (platform === 'win32') {
+    return { name: 'oa-delegate.cmd', text: `@echo off\r\nnode "${target}" %*\r\n` };
+  }
+  return { name: 'oa-delegate', text: `#!/bin/sh\nexec node ${JSON.stringify(target)} "$@"\n` };
+}
+
+/**
  * Write the `oa-delegate` wrapper into ~/.open-alive/bin and return its
  * absolute path, or `null` when the CLI module it would exec is absent.
  *
@@ -252,7 +263,8 @@ function logDelegation(o: {
  */
 export function ensureDelegateCli(): string | null {
   const binDir = join(homedir(), '.open-alive', 'bin');
-  const wrapper = join(binDir, 'oa-delegate');
+  const script = delegateWrapper(fileURLToPath(new URL('./delegateCli.js', import.meta.url)));
+  const wrapper = join(binDir, script.name);
   const target = fileURLToPath(new URL('./delegateCli.js', import.meta.url));
   if (!existsSync(target)) {
     try {
@@ -263,7 +275,7 @@ export function ensureDelegateCli(): string | null {
     return null;
   }
   mkdirSync(binDir, { recursive: true });
-  writeFileSync(wrapper, `#!/bin/sh\nexec node ${JSON.stringify(target)} "$@"\n`, { mode: 0o755 });
+  writeFileSync(wrapper, script.text, { mode: 0o755 });
   return wrapper;
 }
 

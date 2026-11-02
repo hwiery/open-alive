@@ -1,6 +1,6 @@
 import { SessionStore, parseTranscriptTokens } from '@open-alive/core';
 import type { HookEventPayload, Ticket, TicketLocation } from '@open-alive/core';
-import { isRemoteLocation, editedPathFrom } from '@open-alive/core';
+import { isRemoteLocation, editedPathFrom, splitPathList } from '@open-alive/core';
 import { createPromptSubsystem, type PromptSubsystem } from '@open-alive/prompt-agent';
 import { createHttpServer } from './httpRouter.js';
 import { WSBroadcaster } from './wsServer.js';
@@ -33,14 +33,13 @@ import {
 import { createUsageRecordsCache } from './usage/jsonlUsage.js';
 import { SystemMetricsPoller } from './systemMetrics.js';
 import { UsageLimitsPoller } from './usage/rateLimitsPoller.js';
+import { fetchCodexUsageLive, newerCodexUsage, readCodexUsage } from './usage/codexUsage.js';
 import { startWorkerLoop } from './promptWorker.js';
 import { createCanonicalPipeline } from './canonicalPipeline.js';
 import { createCatalogSignal } from './catalogSignal.js';
 import { resolveSessionTerminal } from './sessionTerminalLink.js';
 import { readTranscriptConversation } from './transcriptLocator.js';
 import { augmentPath } from './envPath.js';
-import { createEfficioReader } from './efficioReader.js';
-import { createEfficioCollector, resolveEfficioRoot } from './efficioCollector.js';
 import { createTicketStore } from './ticketStore.js';
 import { createRunStore } from './runStore.js';
 import { resolveCwd, invalidateGitCache } from './gitResolver.js';
@@ -53,13 +52,18 @@ import { resolveExecutor } from './executors/resolve.js';
 import { createFlagSupportCache } from './agentFlags.js';
 import { sshListDirs } from './executors/sshBrowse.js';
 import { createLitellmClient, DEFAULT_LITELLM_BASE_URL } from './orchestrator/litellmClient.js';
-import { createLitellmPanel, resolvePanelModels } from './panel/litellmPanel.js';
+import { createLitellmPanel, configuredPanelModels } from './panel/litellmPanel.js';
+import { createClaudeModelCatalog } from './claudeModels.js';
+import { findCli } from './spawnCli.js';
+import { createCodexModelCatalog } from './codexModels.js';
 import { parsePanelExcludedRoots, panelAllowedFor } from './panel/panelPolicy.js';
 import { adviseDecision as runDecisionPanel } from './panel/decisionPanel.js';
 import { createTicketCommitter } from './ticketCommit.js';
 import { createBackendRegistry } from './orchestrator/backends.js';
 import { reloadDelegateCatalog, MODELS_FILE } from './orchestrator/delegateModels.js';
 import { createGatewaySettings } from './gatewaySettings.js';
+import { createAccessSettings } from './accessSettings.js';
+import { createMobileSettings, probeTailscaleCli } from './mobileSettings.js';
 import { ensureDelegateCli, resolveDelegateModel } from './orchestrator/delegateCli.js';
 import { readDelegations } from './orchestrator/delegationStore.js';
 import { createEvalStore } from './evalStore.js';
@@ -70,7 +74,7 @@ import { loadRemoteAccessConfig, createAuthLimiter } from './remoteAccess.js';
 import { ensureLocalToken } from './localToken.js';
 import { authorizeUpgrade } from './wsAuth.js';
 import { isCwdAllowed } from './ticketRunner.js';
-import { watch, existsSync, mkdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { dirname, join, isAbsolute, basename } from 'node:path';
 import { homedir } from 'node:os';
@@ -154,11 +158,6 @@ try {
 
 const despawnTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-// Read-only bridge to efficio's SQLite store (~/.efficio/efficio.db). The
-// server never computes statistics — efficio (Python) writes pre-scored rows;
-// we only read them. Absent/empty DB degrades gracefully to available:false.
-const efficio = createEfficioReader();
-
 // Canonical (v2) dual-write. Runs beside the legacy SessionStore path, never in
 // front of it: if this cannot start, hooks keep flowing exactly as before
 // (ADR-0003 storage location; §C.7 graceful degradation).
@@ -221,16 +220,6 @@ if (canonicalPipeline.enabled) {
     })
     .catch((error) => console.error('[canonical] legacy import failed:', error));
 }
-
-// Auto-collect: when a session ends, trigger `efficio collect` (debounced). The
-// existing ~/.efficio watcher then broadcasts efficio:update so the UI refreshes.
-// Disabled if efficio source isn't found or OPEN_ALIVE_AUTO_COLLECT=0.
-const efficioCollector = createEfficioCollector({
-  efficioRoot: process.env.OPEN_ALIVE_AUTO_COLLECT === '0' ? null : resolveEfficioRoot(),
-  python: process.env.EFFICIO_PYTHON ?? 'python3',
-  debounceMs: 60_000,
-  onLog: (m) => console.log(m),
-});
 
 /** Persisted managed sessions that have no live pty right now — the resumable set. */
 function getResumableSessions() {
@@ -331,10 +320,6 @@ function onEvent(payload: HookEventPayload): void {
       broadcaster.broadcast({ type: 'agent:despawn', sessionId: agent.sessionId });
     }
 
-    // Session ended → transcript is complete. Trigger a debounced efficio collect
-    // so the dashboard's efficiency scores stay current without manual CLI runs.
-    efficioCollector.schedule();
-
     // Async transcript parsing (non-blocking). Token usage isn't known until the
     // transcript is parsed, which happens AFTER the archive snapshot was taken —
     // so backfill it into both the live store and the durable archive when ready.
@@ -404,7 +389,20 @@ function removeAgent(sessionId: string): boolean {
 // Autonomous headless agents driven by cards. `broadcast` forward-references
 // `broadcaster` (assigned below); it's only invoked at runtime, long after both
 // are initialised — same pattern as TerminalManager's `send`.
-const ticketStore = createTicketStore();
+// Which full id each Claude tier means right now. Read from the cache at boot,
+// refreshed by the claude-local backend check (onboarding / Settings → Backend)
+// and once in the background at startup.
+const claudeModels = createClaudeModelCatalog({
+  cacheFile: join(ALIVE_DIR, 'claude-models.json'),
+  findClaude: () => findOnPath('claude'),
+});
+// Codex is an optional second engine: a ticket whose model is a Codex model
+// runs on the local `codex` CLI (verification still runs on Claude).
+const codexModels = createCodexModelCatalog({
+  cacheFile: join(ALIVE_DIR, 'codex-models.json'),
+  findCodex: () => findOnPath('codex'),
+});
+const ticketStore = createTicketStore({ currentModels: () => claudeModels.current() });
 await ticketStore.load();
 
 // ── Run registry (spec 2026-08-28) ───────────────────────────────────────────
@@ -516,15 +514,15 @@ if (!delegateCmd) {
 
 // Local cwd allowlist (colon-separated). Applies to LOCAL tickets only; remote
 // (ssh) tickets are gated by the loopback-only create route + host ownership.
-const localAllowedRoots = process.env.OPEN_ALIVE_TICKET_ROOTS?.split(':').filter(Boolean);
+const localAllowedRoots = process.env.OPEN_ALIVE_TICKET_ROOTS ? splitPathList(process.env.OPEN_ALIVE_TICKET_ROOTS) : undefined;
 // Resolve the execution backend for a ticket's location: local child process, or
 // SSH to a remote host. Absent location = local.
 // One process-wide cache of which `--model`/`--effort` flags each target CLI
 // accepts. Executors are built per spawn, so without this every run would
 // re-probe (an extra SSH round-trip per remote ticket).
 const runFlagCache = createFlagSupportCache();
-const executorFor = (location: TicketLocation | undefined) =>
-  resolveExecutor(location, { localAllowedRoots, flagCache: runFlagCache });
+const executorFor = (location: TicketLocation | undefined, engine?: import('@open-alive/core').TicketEngine) =>
+  resolveExecutor(location, { localAllowedRoots, flagCache: runFlagCache, findCodexModel: (id) => codexModels.find(id) }, engine);
 
 // ── Review panel (litellm) ───────────────────────────────────────────────────
 // One gateway client, two consumers: the completion gate's second-opinion panel
@@ -544,11 +542,14 @@ function rebuildGateway(): void {
   gateway.client = baseUrl || apiKey
     ? createLitellmClient({ baseUrl: baseUrl || DEFAULT_LITELLM_BASE_URL, apiKey })
     : undefined;
-  gateway.panel = gateway.client
-    ? createLitellmPanel(gateway.client, { models: resolvePanelModels(process.env) })
+  const roster = gateway.client ? configuredPanelModels(process.env) : null;
+  gateway.panel = gateway.client && roster
+    ? createLitellmPanel(gateway.client, { models: roster })
     : undefined;
   if (gateway.panel) {
     console.log(`[panel] review panel: ${gateway.panel.models.join(', ')}`);
+  } else if (gateway.client) {
+    console.log('[panel] gateway connected but no models chosen — save the gateway from Settings → Backend or set OA_PANEL_MODELS');
   } else {
     console.log('[panel] no LLM gateway configured — verification runs gate-only, decisions wait for a human');
   }
@@ -615,7 +616,7 @@ const ticketRunner = createTicketRunner({
       ...(ticket.requestedModel ? { model: ticket.requestedModel } : {}),
       ...(ticket.effort ? { effort: ticket.effort } : {}),
     };
-    return executorFor(ticket.location).spawn({
+    return executorFor(ticket.location, ticket.engine).spawn({
       goal,
       cwd: ticket.cwd,
       permissionMode: 'bypassPermissions',
@@ -695,20 +696,27 @@ if (!process.env.OPEN_ALIVE_TICKET_ROOTS) {
 // ── Orchestration backends ───────────────────────────────────────────────────
 // litellm is the first sub-agent delegation target; its key lives in server env
 // only (never sent to the browser). The registry powers the onboarding surface.
+// PATHEXT-aware on Windows (`claude.cmd`, `codex.cmd`).
 function findOnPath(bin: string): string | null {
-  for (const dir of (augmentPath(process.env.PATH) ?? '').split(':')) {
-    if (!dir) continue;
-    try {
-      if (statSync(join(dir, bin)).isFile()) return join(dir, bin);
-    } catch {
-      // not here — keep looking
-    }
-  }
-  return null;
+  return findCli(bin);
 }
 const backendRegistry = createBackendRegistry({
   getLitellm: () => gateway.client,
   findClaude: () => findOnPath('claude'),
+  refreshClaude: () => claudeModels.refresh(),
+  refreshCodex: () => codexModels.refresh(),
+});
+// Background refresh so the ticket picker shows the current models without the
+// user opening Settings. Failure is fine: the cache or fallback ids stay.
+void claudeModels.refresh().then((r) => {
+  if (r.ok) {
+    console.log(`[claude] ${r.snapshot.version ?? ''} models: ${r.snapshot.probed.map((t) => r.snapshot.models[t]).join(', ')}`);
+  } else {
+    console.log(`[claude] model check skipped: ${r.error}`);
+  }
+});
+void codexModels.refresh().then((r) => {
+  console.log(r.ok ? `[codex] ${r.snapshot.version ?? ''} models: ${r.snapshot.models.map((m) => m.id).join(', ')}` : `[codex] not available: ${r.error}`);
 });
 
 /**
@@ -862,7 +870,17 @@ const httpServer = createHttpServer({
   getProjectNames,
   saveProjectName,
   removeProjectName,
-  efficio,
+  accessSettings: createAccessSettings({ envFile: SERVER_ENV_FILE, env: process.env, config: remoteAccess }),
+  mobileSettings: createMobileSettings({
+    envFile: SERVER_ENV_FILE,
+    config: remoteAccess,
+    port: PORT,
+    probeTailscale: probeTailscaleCli,
+    // Under launchd autostart (KeepAlive on non-zero exit) a deliberate exit is a restart.
+    ...(process.env.XPC_SERVICE_NAME === 'com.openalive.server'
+      ? { restart: () => setTimeout(() => process.exit(75), 300) }
+      : {}),
+  }),
   gatewaySettings: createGatewaySettings({
     envFile: SERVER_ENV_FILE,
     modelsFile: process.env.OA_DELEGATE_MODELS_FILE?.trim() && process.env.OA_DELEGATE_MODELS_FILE.trim() !== 'builtin'
@@ -875,10 +893,15 @@ const httpServer = createHttpServer({
       console.log('[gateway] settings saved from the dashboard — gateway client reloaded');
     },
   }),
+  claudeModels: () => ({ models: claudeModels.current() }),
+  codexModels: {
+    list: () => ({ models: codexModels.get().models }),
+    has: (id) => codexModels.has(id),
+  },
   backends: {
     list: () => backendRegistry.list(),
     check: async (id: string) =>
-      id === 'claude-local' || id === 'litellm' || id === 'ssh' ? backendRegistry.check(id) : null,
+      id === 'claude-local' || id === 'codex-local' || id === 'litellm' || id === 'ssh' ? backendRegistry.check(id) : null,
   },
   // Local git branch management for the ticket composer. Every operation
   // re-resolves the checkout afterwards and re-mirrors its tickets, so the
@@ -961,15 +984,28 @@ const lastTouchAt = new Map<string, number>();
 const TOUCH_THROTTLE_MS = 15_000;
 
 // Claude subscription usage windows (5h / 7d / model-scoped), the same numbers
-// `/usage` reports. 60s cadence; a failed poll dims the pills instead of
-// clearing them (see UsageLimitsPoller's failure policy). Declared before the
+// `/usage` reports, asked of `claude -p /usage` (token endpoint as fallback).
+// 15 min cadence; a failed poll keeps the values flagged stale (shown as a fetch
+// failure) instead of clearing them (see UsageLimitsPoller's failure policy). Declared before the
 // broadcaster because `getUsageLimits` runs on the first client connect.
-const usagePoller = new UsageLimitsPoller();
+const usagePoller = new UsageLimitsPoller({ cacheFile: join(ALIVE_DIR, 'usage-cache.json') });
+// Codex usage: its session logs every 60s, and Codex's own account reading
+// every 15 min, which also counts use from other machines (see codexUsage.ts).
+let codexUsage: import('@open-alive/core').CodexUsage | null = null;
+/** Claude + Codex in one snapshot; Claude fields are empty until its first poll. */
+function combinedUsage(): import('@open-alive/core').UsageLimitsSnapshot | null {
+  const claude = usagePoller.latest();
+  if (!claude && !codexUsage) return null;
+  return {
+    ...(claude ?? { fiveHour: null, sevenDay: null, scopedWeekly: [], fetchedAt: 0, stale: false }),
+    codex: codexUsage,
+  };
+}
 
 const broadcaster = new WSBroadcaster({
   getSnapshot,
   remoteTerminalLevel: remoteAccess.terminalLevel,
-  getUsageLimits: () => usagePoller.latest(),
+  getUsageLimits: () => combinedUsage(),
   getRunTree: () => runStore.tree(),
   getTickets: () => ticketStore.list(),
   onClientMessage: (ws, msg) => {
@@ -1004,6 +1040,7 @@ const broadcaster = new WSBroadcaster({
         claudeSessionId: msg.claudeSessionId,
         resumeSessionId: msg.resumeSessionId,
         displayName: resolvedDisplayName,
+        localModel: msg.localModel,
       });
       // Persist Claude (non-SSH) sessions so they can be resumed after a restart.
       const effectiveClaudeId = msg.resumeSessionId ?? msg.claudeSessionId;
@@ -1118,30 +1155,41 @@ metricsPoller.subscribe((snapshot) => {
 });
 metricsPoller.start();
 
-usagePoller.subscribe((usage) => {
-  broadcaster.broadcast({ type: 'system:usage', usage });
+usagePoller.subscribe(() => {
+  const usage = combinedUsage();
+  if (usage) broadcaster.broadcast({ type: 'system:usage', usage });
 });
 usagePoller.start();
-
-// Watch ~/.efficio for DB changes and push fresh status to clients. efficio
-// `collect`/`fit` rewrites the SQLite store (multiple fs events) → debounce.
-// Directory watch (not file) so we also catch first-time DB creation.
-const efficioDir = dirname(efficio.dbPath);
-let efficioWatcher: ReturnType<typeof watch> | null = null;
-if (existsSync(efficioDir)) {
-  let efficioDebounce: ReturnType<typeof setTimeout> | null = null;
-  try {
-    efficioWatcher = watch(efficioDir, (_event, filename) => {
-      if (filename && !filename.startsWith('efficio.db')) return;
-      if (efficioDebounce) clearTimeout(efficioDebounce);
-      efficioDebounce = setTimeout(() => {
-        broadcaster.broadcast({ type: 'efficio:update', status: efficio.status() });
-      }, 400);
-    });
-  } catch {
-    // fs.watch unsupported on this platform/path — UI still works via HTTP polling on demand.
-  }
-}
+const CODEX_LIVE_USAGE_MS = 15 * 60_000;
+let codexLogUsage: import('@open-alive/core').CodexUsage | null = null;
+let codexLiveUsage: import('@open-alive/core').CodexUsage | null = null;
+let codexLiveFailed = false;
+const publishCodexUsage = () => {
+  const newest = newerCodexUsage(codexLogUsage, codexLiveUsage);
+  const next = newest ? { ...newest, stale: codexLiveFailed } : null;
+  if (JSON.stringify(next) === JSON.stringify(codexUsage)) return;
+  codexUsage = next;
+  const usage = combinedUsage();
+  if (usage) broadcaster.broadcast({ type: 'system:usage', usage });
+};
+const pollCodexUsage = async () => {
+  codexLogUsage = await readCodexUsage();
+  publishCodexUsage();
+};
+const pollCodexLiveUsage = async () => {
+  // A failed call keeps the last live reading (the logs may still overtake it)
+  // and flags it stale, so the chip says the read failed.
+  const live = await fetchCodexUsageLive();
+  codexLiveFailed = live === null;
+  codexLiveUsage = live ?? codexLiveUsage;
+  publishCodexUsage();
+};
+void pollCodexUsage();
+void pollCodexLiveUsage();
+const codexUsageTimer = setInterval(() => void pollCodexUsage(), 60_000);
+codexUsageTimer.unref();
+const codexLiveUsageTimer = setInterval(() => void pollCodexLiveUsage(), CODEX_LIVE_USAGE_MS);
+codexLiveUsageTimer.unref();
 
 // Start the prompt-worker queue consumer in-process. No pidfile, no fork:
 // the worker shares the server process lifecycle. Errors inside the loop
@@ -1194,8 +1242,8 @@ process.on('SIGINT', () => {
   despawnTimers.clear();
   metricsPoller.stop();
   usagePoller.stop();
-  efficioCollector.stop();
-  efficioWatcher?.close();
+  clearInterval(codexUsageTimer);
+  clearInterval(codexLiveUsageTimer);
   stopWorkerLoop();
   canonicalPipeline.close();
   promptSubsystem?.fastify.close().catch(() => {});

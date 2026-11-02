@@ -42,8 +42,8 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   {
     // ADR-0011: the single translation point between Alive's internal ULIDs and
-    // provider-native session ids. Alive ids are never written into the prompt or
-    // efficio databases; cross-database joins go through `provider_session_id`.
+    // provider-native session ids. Alive ids are never written into the prompt
+    // database; cross-database joins go through `provider_session_id`.
     version: 2,
     up: `
       CREATE TABLE IF NOT EXISTS session_provider_refs (

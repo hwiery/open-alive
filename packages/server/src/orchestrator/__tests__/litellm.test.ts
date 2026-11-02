@@ -143,6 +143,64 @@ describe('createBackendRegistry', () => {
     expect(no.connected).toBe(false);
   });
 
+  it('reports the CLI version and the probed models once claude is found', async () => {
+    const r = await createBackendRegistry({
+      findClaude: () => '/usr/bin/claude',
+      refreshClaude: async () => ({
+        ok: true,
+        snapshot: {
+          models: { haiku: 'claude-haiku-5-5', sonnet: 'claude-sonnet-5-5', opus: 'claude-opus-5-5', fable: 'claude-fable-5-1' },
+          probed: ['sonnet', 'opus', 'fable'],
+          version: '2.1.296 (Claude Code)',
+        },
+      }),
+    }).check('claude-local');
+    expect(r.connected).toBe(true);
+    expect(r.models).toEqual(['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1']);
+    expect(r.detail).toBe('2.1.296 (Claude Code) — Sonnet 5.5 · Opus 5.5 · Fable 5.1');
+  });
+
+  it('fails the claude check when the CLI is installed but cannot start a session', async () => {
+    let refreshed = false;
+    const missing = await createBackendRegistry({
+      findClaude: () => null,
+      refreshClaude: async () => {
+        refreshed = true;
+        throw new Error('must not probe without a binary');
+      },
+    }).check('claude-local');
+    expect(missing.connected).toBe(false);
+    expect(refreshed).toBe(false);
+
+    const loggedOut = await createBackendRegistry({
+      findClaude: () => '/usr/bin/claude',
+      refreshClaude: async () => ({
+        ok: false,
+        error: 'Invalid API key · Please run /login',
+        snapshot: { models: { haiku: 'h', sonnet: 'a', opus: 'b', fable: 'c' }, probed: [] },
+      }),
+    }).check('claude-local');
+    expect(loggedOut).toMatchObject({ connected: false, detail: 'Invalid API key · Please run /login' });
+  });
+
+  it('lists Codex after Claude when enabled and reports its login and models', async () => {
+    const registry = createBackendRegistry({
+      refreshCodex: async () => ({
+        ok: true,
+        snapshot: {
+          version: 'codex-cli 0.148.0',
+          models: [
+            { id: 'gpt-5.6-terra', label: 'GPT-5.6-Terra', efforts: [], listed: true },
+            { id: 'gpt-5.5', label: 'GPT-5.5', efforts: [], listed: false },
+          ],
+        },
+      }),
+    });
+    expect(registry.list().map((b) => b.id)).toEqual(['claude-local', 'codex-local']);
+    const r = await registry.check('codex-local');
+    expect(r).toMatchObject({ connected: true, models: ['gpt-5.6-terra'], detail: 'codex-cli 0.148.0 — GPT-5.6-Terra' });
+  });
+
   it('checks litellm connectivity + model count', async () => {
     const r = await createBackendRegistry({ litellm }).check('litellm');
     expect(r.connected).toBe(true);

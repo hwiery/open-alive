@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { getSettings, subscribeSettings, type AppearanceMode } from './settings';
 
 /**
@@ -26,4 +27,35 @@ export function installAppearance(root: HTMLElement = document.documentElement):
     unsubscribe();
     media?.removeEventListener('change', apply);
   };
+}
+
+/** Theme currently stamped on <html>. Falls back to dark before installAppearance runs. */
+export function getAppTheme(root: HTMLElement = document.documentElement): ResolvedTheme {
+  return root.dataset.theme === 'light' ? 'light' : 'dark';
+}
+
+/**
+ * Notify on every change of the resolved theme, including OS-driven flips in
+ * 'system' mode that never touch the settings store. Watches <html data-theme>
+ * so it sees exactly what the CSS sees.
+ */
+export function subscribeAppTheme(fn: (theme: ResolvedTheme) => void, root: HTMLElement = document.documentElement): () => void {
+  let last = getAppTheme(root);
+  const observer = new MutationObserver(() => {
+    const next = getAppTheme(root);
+    if (next === last) return;
+    last = next;
+    fn(next);
+  });
+  observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+  return () => observer.disconnect();
+}
+
+export function useAppTheme(): ResolvedTheme {
+  const [theme, setTheme] = useState<ResolvedTheme>(() => getAppTheme());
+  useEffect(() => {
+    setTheme(getAppTheme());
+    return subscribeAppTheme(setTheme);
+  }, []);
+  return theme;
 }

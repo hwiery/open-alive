@@ -28,8 +28,9 @@ mkdir -p "$OUT/dist" "$OUT/scripts" "$OUT/ui"
 # at runtime are externalized here. Since the prompt-* packages run inside the server,
 # the server bundle suddenly pulled in pino/fastify/better-sqlite3/franc-min — none
 # of which survive esbuild ESM bundling. Externalizing keeps the bundle small and
-# defers loading to install-time `node_modules`.
-EXTERNAL_FLAGS="--external:ws --external:node-pty --external:better-sqlite3 --external:pino --external:pino-* --external:thread-stream --external:sonic-boom --external:on-exit-leak-free --external:real-require --external:atomic-sleep --external:safe-stable-stringify --external:fast-redact --external:quick-format-unescaped --external:process-warning --external:fastify --external:@fastify/* --external:franc-min --external:trigram-utils --external:n-gram --external:collapse-white-space --external:commander --external:picocolors --external:zod"
+# defers loading to install-time `node_modules`. cross-spawn (CJS, requires
+# child_process at runtime) is external for the same reason.
+EXTERNAL_FLAGS="--external:ws --external:node-pty --external:better-sqlite3 --external:pino --external:pino-* --external:thread-stream --external:sonic-boom --external:on-exit-leak-free --external:real-require --external:atomic-sleep --external:safe-stable-stringify --external:fast-redact --external:quick-format-unescaped --external:process-warning --external:fastify --external:@fastify/* --external:franc-min --external:trigram-utils --external:n-gram --external:collapse-white-space --external:commander --external:picocolors --external:zod --external:cross-spawn"
 
 # Bundle the SAME CLI source the workspace uses (packages/cli/src/index.ts).
 # The CLI auto-detects whether the server entry lives at the workspace path
@@ -59,19 +60,13 @@ npx esbuild "$ROOT/packages/server/src/orchestrator/delegateCli.ts" \
   $EXTERNAL_FLAGS
 
 echo "[6/6] Copying assets..."
-cp "$ROOT/packages/hooks/scripts/stream-event.sh" "$OUT/scripts/"
+cp "$ROOT/packages/hooks/scripts/stream-event.sh" "$ROOT/packages/hooks/scripts/stream-event.mjs" "$OUT/scripts/"
 cp -r "$ROOT/packages/ui/dist/." "$OUT/ui/"
 cp "$ROOT/LICENSE" "$OUT/"
 cp "$ROOT/README.md" "$OUT/"
 cp "$ROOT/.env.example" "$OUT/env.example"
 mkdir -p "$OUT/examples" && cp "$ROOT"/examples/*.json "$OUT/examples/"
 
-# Bundle efficio (pure-stdlib python — no numpy). The server spawns
-# `python3 -m efficio collect` from the package root on session end, so the
-# package needs the source tree (sources only; tests/__pycache__ excluded).
-mkdir -p "$OUT/efficio"
-cp "$ROOT"/efficio/*.py "$OUT/efficio/"
-cp "$ROOT/efficio/README.md" "$OUT/efficio/"
 
 # Create package.json for npm
 cat > "$OUT/package.json" << PKGJSON
@@ -89,7 +84,6 @@ cat > "$OUT/package.json" << PKGJSON
     "dist/",
     "scripts/",
     "ui/",
-    "efficio/",
     "examples/",
     "env.example",
     "LICENSE",
@@ -100,7 +94,8 @@ cat > "$OUT/package.json" << PKGJSON
     "node-pty": "1.2.0-beta.11",
     "better-sqlite3": "^12.11.1",
     "pino": "^9.5.0",
-    "fastify": "^5.12.1",
+    "fastify": "^5.12.5",
+    "cross-spawn": "^7.0.6",
     "franc-min": "^6.2.0",
     "commander": "^12.1.0",
     "picocolors": "^1.1.1",
@@ -109,7 +104,7 @@ cat > "$OUT/package.json" << PKGJSON
   "engines": {
     "node": ">=20"
   },
-  "os": ["darwin", "linux"],
+  "os": ["darwin", "linux", "win32"],
   "repository": {
     "type": "git",
     "url": "$REPO_URL"

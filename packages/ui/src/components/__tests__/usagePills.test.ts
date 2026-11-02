@@ -79,3 +79,33 @@ describe('usagePillColor', () => {
     expect(usagePillColor('var(--accent-teal)', 0.9)).toBe('var(--accent-red)');
   });
 });
+
+describe('toUsageGroups', () => {
+  it('groups Claude then Codex, skipping a provider with no windows', async () => {
+    const { toUsageGroups } = await import('../usagePills.ts');
+    const groups = toUsageGroups({
+      fiveHour: { utilization: 0.2, resetsAt: null },
+      sevenDay: null,
+      scopedWeekly: [],
+      fetchedAt: 0,
+      stale: true,
+      codex: { fiveHour: null, sevenDay: null, observedAt: 1 },
+    });
+    expect(groups.map((g) => g.provider)).toEqual(['claude']);
+    expect(groups[0]!.windows.map((w) => [w.label, w.percent, w.stale])).toEqual([['5H', 20, false]]);
+    expect(groups[0]!.failed).toBe(true);
+  });
+
+  it('keeps a failed provider with no windows so the failure can be shown', async () => {
+    const { toUsageGroups } = await import('../usagePills.ts');
+    const groups = toUsageGroups({
+      fiveHour: null,
+      sevenDay: null,
+      scopedWeekly: [],
+      fetchedAt: 0,
+      stale: true,
+      codex: { fiveHour: null, sevenDay: null, observedAt: 1, stale: true },
+    });
+    expect(groups.map((g) => [g.provider, g.failed])).toEqual([['claude', true], ['codex', true]]);
+  });
+});

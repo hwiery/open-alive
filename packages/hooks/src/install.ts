@@ -44,6 +44,11 @@ function isLegacyThinkPromptHook(entry: HookEntry): boolean {
   );
 }
 
+/** The command Claude Code runs for each event. */
+export function hookCommandFor(script: string, platform: NodeJS.Platform): string {
+  return platform === 'win32' ? `node "${script}"` : script;
+}
+
 function isOpenAliveHook(entry: HookEntry): boolean {
   return (
     entry.hooks?.some(
@@ -66,10 +71,14 @@ export function installHooks(): { installed: boolean; settingsPath: string; hook
   // 1. Copy hook script to ~/.open-alive/hooks/
   mkdirSync(aliveDir, { recursive: true });
   const currentDir = dirname(fileURLToPath(import.meta.url));
-  const srcScript = join(currentDir, '..', 'scripts', 'stream-event.sh');
-  const destScript = join(aliveDir, 'stream-event.sh');
+  // Windows has no guaranteed bash/curl, so it gets the Node version of the
+  // hook, run as `node "<path>"`. Everywhere else the bash script stays.
+  const win = process.platform === 'win32';
+  const scriptName = win ? 'stream-event.mjs' : 'stream-event.sh';
+  const srcScript = join(currentDir, '..', 'scripts', scriptName);
+  const destScript = join(aliveDir, scriptName);
   copyFileSync(srcScript, destScript);
-  if (process.platform !== 'win32') {
+  if (!win) {
     chmodSync(destScript, 0o755);
   }
 
@@ -106,7 +115,7 @@ export function installHooks(): { installed: boolean; settingsPath: string; hook
     settings.hooks = {};
   }
 
-  const hookCommand = destScript;
+  const hookCommand = hookCommandFor(destScript, process.platform);
 
   for (const event of HOOK_EVENTS_TO_REGISTER) {
     const existing = settings.hooks[event] ?? [];

@@ -296,7 +296,7 @@ export function PixelOfficePage({
               style={{
                 width: 36,
                 height: 36,
-                background: 'rgba(22, 27, 34, 0.85)',
+                background: 'var(--frame-bg)',
                 border: '1px solid var(--border-color)',
                 borderRadius: 10,
                 color: 'var(--text-primary)',

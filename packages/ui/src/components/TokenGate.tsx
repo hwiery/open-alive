@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { beginAuthReload, onAuthFailure, storeToken } from '../lib/auth.ts';
+import { beginAuthReload, isValidToken, onAuthFailure, storeToken } from '../lib/auth.ts';
 
 /**
  * Asks for a token when the server answers 401.
@@ -15,6 +15,7 @@ export function TokenGate() {
   const { t } = useTranslation();
   const [needed, setNeeded] = useState(false);
   const [value, setValue] = useState('');
+  const [invalid, setInvalid] = useState(false);
 
   useEffect(() => onAuthFailure(() => setNeeded(true)), []);
 
@@ -23,6 +24,12 @@ export function TokenGate() {
   const submit = () => {
     const token = value.trim();
     if (!token) return;
+    // A pasted label, a token with spaces or line breaks: refuse here, with a
+    // reason, rather than store something the connection cannot use.
+    if (!isValidToken(token)) {
+      setInvalid(true);
+      return;
+    }
     storeToken(token);
     beginAuthReload();
     window.location.reload();
@@ -33,7 +40,7 @@ export function TokenGate() {
       style={{
         position: 'fixed', inset: 0, zIndex: 9999, display: 'flex',
         alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(13, 17, 23, 0.92)', fontFamily: 'var(--font-ui)',
+        background: 'var(--frame-bg)', fontFamily: 'var(--font-ui)',
       }}
     >
       <div style={{ width: 420, maxWidth: '90vw', padding: 24, borderRadius: 12, background: 'var(--bg-secondary, #161b22)', border: '1px solid var(--border-default, #30363d)' }}>
@@ -44,7 +51,10 @@ export function TokenGate() {
           value={value}
           autoFocus
           placeholder={t('auth.placeholder')}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setInvalid(false);
+          }}
           // Composition guard is unnecessary for a token field, but Enter to
           // submit is what anyone pasting a credential expects.
           onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
@@ -54,6 +64,9 @@ export function TokenGate() {
             color: 'var(--text-primary, #e6edf3)', fontFamily: 'var(--font-mono)', fontSize: 13,
           }}
         />
+        {invalid && (
+          <p role="alert" style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--accent-red, #f85149)' }}>{t('auth.invalid')}</p>
+        )}
         <button
           onClick={submit}
           style={{

@@ -10,7 +10,7 @@ import type { WSClientMessage } from '@open-alive/core';
  * directly as a Map key and persistence key, and a non-string `cwd` reaching
  * `pty.spawn` can throw. Validating here keeps those malformed payloads out.
  */
-const terminalMode = z.enum(['claude', 'shell']);
+const terminalMode = z.enum(['claude', 'codex', 'shell']);
 const terminalSource = z.enum(['local', 'ssh']);
 const claudeVariant = z.enum(['claude', 'agents']);
 
@@ -29,6 +29,7 @@ const schema: z.ZodType<WSClientMessage> = z.discriminatedUnion('type', [
     claudeSessionId: z.string().optional(),
     resumeSessionId: z.string().optional(),
     displayName: z.string().optional(),
+    localModel: z.boolean().optional(),
   }),
   z.object({ type: z.literal('terminal:input'), tabId: z.string().min(1), data: z.string() }),
   z.object({

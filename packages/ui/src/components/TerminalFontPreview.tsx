@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FONT_PRESETS, resolveTerminalTheme, type AppSettings } from '../services/settings.ts';
+import {
+  FONT_PRESETS,
+  displayTerminalTheme,
+  effectiveTerminalBackground,
+  resolveTerminalTheme,
+  type AppSettings,
+} from '../services/settings.ts';
+import { useAppTheme } from '../services/appearance.ts';
 import { isFontInstalled, loadTerminalFont, primaryFontName } from '../services/terminalFonts.ts';
 
 /** Sample session shown in the preview — shell output, not UI copy, so it is not translated. */
@@ -22,7 +29,9 @@ interface TerminalFontPreviewProps {
 export function TerminalFontPreview({ terminal }: TerminalFontPreviewProps) {
   const { t } = useTranslation();
   const preset = FONT_PRESETS.find((f) => f.id === terminal.fontFamilyId) ?? FONT_PRESETS[0]!;
-  const theme = resolveTerminalTheme(terminal.themeId, terminal.colorOverrides);
+  const appTheme = useAppTheme();
+  // Draw the colours xterm will draw (contrast-adjusted), not the raw palette.
+  const theme = displayTerminalTheme(resolveTerminalTheme(terminal.themeId, terminal.colorOverrides, appTheme), appTheme);
   const [installed, setInstalled] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -52,7 +61,7 @@ export function TerminalFontPreview({ terminal }: TerminalFontPreviewProps) {
           padding: `${terminal.paddingY}px ${terminal.paddingX}px`,
           borderRadius: 8,
           border: '1px solid var(--border-color)',
-          background: theme.background === 'transparent' ? 'var(--bg-primary)' : theme.background,
+          background: effectiveTerminalBackground(theme, appTheme),
           color: theme.foreground,
           fontFamily: preset.family,
           fontSize: terminal.fontSize,
@@ -74,7 +83,7 @@ export function TerminalFontPreview({ terminal }: TerminalFontPreviewProps) {
         </div>
       </div>
       {installed === false && (
-        <div role="note" style={{ fontSize: 11, color: 'var(--accent-orange, #d29922)' }}>
+        <div role="note" style={{ fontSize: 11, color: 'var(--accent-amber)' }}>
           {t('settings.terminal.fontNotInstalled', { font: preset.label })}
         </div>
       )}

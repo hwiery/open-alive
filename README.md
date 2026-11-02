@@ -44,14 +44,14 @@ Everything runs on your machine. There is no telemetry; the only outbound reques
 | | Required | Notes |
 |---|---|---|
 | **Node.js ≥ 20** | yes | https://nodejs.org — Node 22 or 24 LTS recommended (prebuilt native modules). Node 20 and non-LTS releases build `better-sqlite3` from source, which needs the C/C++ build tools below |
-| **Claude Code** | yes | https://docs.anthropic.com/en/docs/claude-code |
+| **Claude Code** | yes | https://docs.anthropic.com/en/docs/claude-code — installed **and logged in** (`claude`, then `/login`) |
+| Codex CLI | optional | `npm install -g @openai/codex`, then `codex login` — lets a ticket run on a Codex model (verification still runs on Claude) |
 | **git** | yes | to clone the repo |
 | pnpm ≥ 10 | from source | the installer enables it via `corepack` if missing |
 | C/C++ build tools | sometimes | only if prebuilt `node-pty` / `better-sqlite3` binaries don't exist for your platform (macOS: `xcode-select --install`, Debian/Ubuntu: `build-essential python3`) |
-| Python 3 | optional | only for the Efficio self-evaluation panel |
 
-Supported: macOS, Linux, and Windows via WSL2 (install and run everything inside the WSL2 distro). Native Windows is **not supported**: the hook is a bash script, and the installer, terminal and Efficio assume a Unix environment. CI runs on macOS and Linux only.
-지원: macOS, Linux, Windows는 WSL2에서만 (설치·실행 모두 WSL2 배포판 안에서). Windows 직접 설치는 **지원하지 않습니다** — 훅이 bash 스크립트이고 설치 스크립트·터미널·Efficio가 Unix 환경을 전제합니다. CI는 macOS·Linux에서만 실행됩니다.
+Supported: macOS, Linux and Windows 10/11 — natively or inside WSL2. On native Windows the hook is a Node script (`node "%USERPROFILE%\.open-alive\hooks\stream-event.mjs"`), terminal tabs run in PowerShell, `claude`/`codex` npm shims (`.cmd`) are handled, path lists such as `OPEN_ALIVE_TICKET_ROOTS` use `;`, and `open-alive autostart enable` adds a Startup-folder entry. Claude Code itself needs Git for Windows on native Windows. CI runs on macOS, Linux and Windows.
+지원: macOS, Linux, Windows 10/11 (네이티브 또는 WSL2). Windows 네이티브에서는 훅이 Node 스크립트로 동작하고, 터미널 탭은 PowerShell, `claude`/`codex` npm 실행 파일(`.cmd`)도 처리하며, `OPEN_ALIVE_TICKET_ROOTS` 같은 경로 목록은 `;`로 구분합니다. `open-alive autostart enable`은 시작프로그램 폴더에 등록합니다. Windows 네이티브에서 Claude Code 자체는 Git for Windows가 필요합니다. CI는 macOS·Linux·Windows에서 실행됩니다.
 
 ### Option A — one-shot installer (recommended / 권장)
 
@@ -80,9 +80,12 @@ open-alive setup
 
 1. **Port** for the dashboard (default `3141`) / 대시보드 포트
 2. **Register Claude Code hooks** in `~/.claude/settings.json` (a `.backup` copy is kept) / 훅 등록 (백업 유지)
-3. **LLM gateway** *(optional)* — any OpenAI-compatible endpoint (LiteLLM, vLLM, Ollama `/v1`…). It lists the gateway's models and writes `~/.open-alive/models.json` / 선택: OpenAI 호환 게이트웨이 연결 및 모델 목록 생성
+3. **LLM gateway** *(optional)* — any OpenAI-compatible endpoint you enter yourself (LiteLLM, OpenRouter, OmniRoute, Ollama, vLLM…). It lists the gateway's models and writes `~/.open-alive/models.json` / 선택: OpenAI 호환 게이트웨이 연결 및 모델 목록 생성
 4. **Autostart at login** *(macOS, optional)* / 로그인 시 자동 시작
 5. **Start now** / 바로 시작
+
+On the first visit the dashboard opens an **onboarding** dialog: it checks the Claude Code connection (version, login, and the models `sonnet`/`opus`/`fable`/`haiku` currently resolve to), shows whether Codex is available, then offers the optional additional API. Re-open it from **Settings → Backend**.
+대시보드를 처음 열면 **온보딩**이 Claude Code 연결(버전·로그인·현재 최신 모델)과 Codex 사용 가능 여부를 확인하고, 선택 사항인 추가 API 연결을 안내합니다. **설정 → 백엔드**에서 다시 열 수 있습니다.
 
 Answers are saved to `~/.open-alive/.env` (mode `600`). Re-run `open-alive setup` any time to change them; `open-alive setup --yes` takes all defaults.
 The gateway can also be set from the dashboard: **Settings → Backend** (test the connection, save, optionally write `models.json`) applies without a restart.
@@ -106,7 +109,6 @@ open-alive stop
 open-alive uninstall       # removes the hooks from ~/.claude/settings.json (and macOS autostart)
 npm uninstall -g open-alive
 rm -rf ~/.open-alive       # optional: all local data (events, tickets, tokens, settings)
-rm -rf ~/.efficio          # optional: Efficio scores
 ```
 
 ---
@@ -136,13 +138,18 @@ All settings are optional and live in `~/.open-alive/.env` (`KEY=VALUE` per line
 |---|---|---|
 | `OPEN_ALIVE_PORT` | `3141` | Dashboard / API port (the hook script reads it from the env file too) |
 | `OPEN_ALIVE_AUTO_COMMIT` | `1` | After a ticket passes verification, commit its changes in the ticket's git repo. `0` disables |
-| `OPEN_ALIVE_AUTO_COLLECT` | `1` | Run Efficio (`python3`) when a session ends. `0` disables |
+| `OPEN_ALIVE_CLAUDE_TUI` | `default` | Claude Code `tui` setting for Claude tabs in the dashboard terminal (`--settings '{"tui":…}'`). `default` keeps xterm scrollback and its scrollbar; `inherit` uses your own `~/.claude/settings.json` (e.g. `fullscreen`, which draws on the alternate screen and leaves the tab without a scrollbar). Applies to newly opened tabs |
 | `OPEN_ALIVE_TICKET_CONCURRENCY` | built-in | Max tickets running at once |
 | `LITELLM_BASE_URL` | `http://localhost:4000` | OpenAI-compatible gateway for sub-agent delegation and review panels |
 | `LITELLM_KEY` | — | Gateway key — optional for keyless gateways such as Ollama (`LITELLM_BASE_URL` alone is enough). With neither set, tickets run without delegation or panels |
 | `OA_DELEGATE_MODEL` | from `models.json` | Default model for `oa-delegate` |
 | `OA_DELEGATE_MODELS_FILE` | `~/.open-alive/models.json` | Model catalogue (`builtin` = the placeholder preset from `examples/models.example.json`; replace it with the ids your gateway serves) |
-| `OA_PANEL_MODELS` | from `models.json` | Comma-separated review-panel roster |
+| `OA_LOCAL_MODEL` | — | Local model a new terminal can start Codex on (`codex --oss -m <model>`), e.g. `gemma4:12b-it-qat`. Set → the PC and phone new-terminal dialogs offer **Codex · local**. Restart the server after changing it |
+| `OA_LOCAL_PROVIDER` | `ollama` | Where that model runs: `ollama` or `lmstudio` |
+| `OA_PANEL_MODELS` | from `models.json` | Comma-separated review-panel roster. Without it (and without `panelModels` in `models.json`) the panel uses the first three chat models of your saved catalogue; with only the placeholder catalogue the panel stays off |
+
+Process environment values win over `~/.open-alive/.env`: a `LITELLM_BASE_URL` exported in your shell overrides what you save in **Settings → Backend** after the next restart.
+셸에 export 한 `LITELLM_BASE_URL` 등은 `.env` 보다 우선하므로, 대시보드에서 저장한 값도 재시작 후에는 셸 값으로 돌아갑니다.
 
 ### Model catalogue (`models.json`) / 모델 카탈로그
 
@@ -207,9 +214,10 @@ spawning → listening → active → idle
 - **Token usage** — parsed from Claude Code transcripts when a session ends (input / output / cache tokens, API calls, model). / 트랜스크립트 기반 토큰 집계
 - **Embedded terminal** — multi-tab xterm.js over `node-pty`. / 내장 터미널
 - **Tickets** — describe a goal and a working directory; open-alive runs Claude Code, verifies the result, asks you when a decision is needed, and (optionally) commits. Local or over SSH. / 목표를 티켓으로 맡기면 실행·검증·보고
-- **Orchestration** *(needs a gateway)* — tickets can delegate subtasks to other models and get a multi-model review panel. / 게이트웨이 설정 시 서브에이전트 위임·멀티모델 리뷰
+  - **Model and run profile are chosen separately**: the model (the latest Claude tiers probed from your CLI, a local Codex model, or any exact id) and the reasoning effort (`low`…`max`). The card and detail show the working model with its vendor logo. / 모델과 실행 프로필(추론 강도)을 따로 선택, 처리 중인 모델을 제공사 로고와 함께 표시
+  - **Codex engine** *(optional)* — pick a Codex model and the ticket runs on `codex exec` (local only); Claude still verifies it. / Codex 모델 선택 시 Codex 로 실행, 검증은 Claude
+- **Orchestration** *(needs an additional API)* — tickets can delegate subtasks to other models and get a multi-model review panel. The additional API is any OpenAI-compatible endpoint you enter (LiteLLM, OpenRouter, OmniRoute, Ollama…). / 추가 API(직접 입력한 OpenAI 호환 엔드포인트) 설정 시 서브에이전트 위임·멀티모델 리뷰
 - **Prompt coach** — scores prompts you send and suggests improvements (local rules; LLM analysis is opt-in). / 프롬프트 품질 분석
-- **Efficio** — zero-token, local self-evaluation of wasted effort per session (see [`efficio/README.md`](efficio/README.md)). / 세션 낭비 자기평가
 - **Remote access** *(off by default)* — token-authenticated access from your phone or another machine. See below. / 원격 접속 (기본 꺼짐)
 - **EN / KO UI**, light and dark themes. / 영어·한국어, 라이트·다크
 
@@ -222,9 +230,8 @@ open-alive only reads and writes on your machine / 로컬에서만 읽고 씁니
 | Path | What |
 |---|---|
 | `~/.claude/settings.json` | hooks are added here (backup: `settings.json.backup`) |
-| `~/.claude/projects/**` | read-only: Claude Code transcripts, for token usage and Efficio |
+| `~/.claude/projects/**` | read-only: Claude Code transcripts, for token usage |
 | `~/.open-alive/` | settings (`.env`, `models.json`), event DB, tickets, runs, logs, prompt data (`prompt/`) |
-| `~/.efficio/efficio.db` | Efficio scores (contains session titles and project paths — don't share it) |
 
 Prompt text sent to an LLM happens only when **you** configure a gateway (delegation, review panels) or opt in to prompt LLM analysis.
 LLM으로 텍스트가 나가는 경우는 사용자가 게이트웨이를 설정하거나 프롬프트 LLM 분석에 동의했을 때뿐입니다.
@@ -258,7 +265,7 @@ open-alive token revoke phone                                # later: revoke one
 | `OPEN_ALIVE_REMOTE=1` | Opt in to remote access. Without it the server stays on loopback. |
 | `OPEN_ALIVE_HOST` | Interface to bind. Defaults to `127.0.0.1`, or `0.0.0.0` in remote mode. |
 | `OPEN_ALIVE_TOKENS` | `label:token` entries. Managed by `open-alive token`. |
-| `OPEN_ALIVE_TICKET_ROOTS` | Colon-separated directories a ticket may run in. Required in remote mode. |
+| `OPEN_ALIVE_TICKET_ROOTS` | Directories a ticket may run in, separated by `:` (`;` on Windows). Required in remote mode. |
 | `OPEN_ALIVE_REMOTE_SSH_HOSTS` | Hosts a remote device may target with an SSH ticket. Empty = none. |
 | `OPEN_ALIVE_TRUST_LOOPBACK=1` | Keep trusting loopback in remote mode. Only safe when nothing proxies to the port. |
 | `OPEN_ALIVE_REMOTE_TERMINAL` | `off` (default) / `watch` / `input` / `shell` |
@@ -302,7 +309,6 @@ packages/
 ├── i18n/          EN/KO translations
 ├── ui/            React 19 + Vite + Canvas 2D pixel office
 └── prompt-*/      prompt capture, rules and analysis (runs inside the server)
-efficio/           zero-token session self-evaluation (Python stdlib)
 scripts/           install, build-npm, release, changelog
 docs/adr/          architecture decision records (Korean)
 ```

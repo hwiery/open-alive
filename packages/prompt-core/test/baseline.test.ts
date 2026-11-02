@@ -73,15 +73,22 @@ describe('coldStartState', () => {
 
 describe('refreshBaseline (DB round-trip)', () => {
   let root: string;
+  // Open handles keep the db file locked on Windows; close them before removing the dir.
+  const opened: Array<{ close(): void }> = [];
+  const track = <T extends { close(): void }>(db: T): T => {
+    opened.push(db);
+    return db;
+  };
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'tp-baseline-'));
   });
   afterEach(() => {
+    for (const db of opened.splice(0)) db.close();
     rmSync(root, { recursive: true, force: true });
   });
 
   it('returns null when sample size is below minimum', () => {
-    const db = openDb(root);
+    const db = track(openDb(root));
     upsertSession(db, { id: 's1', cwd: '/tmp' });
     const u = insertPromptUsage(db, { session_id: 's1', prompt_text: 'hi' });
     upsertQualityScore(db, {
@@ -99,7 +106,7 @@ describe('refreshBaseline (DB round-trip)', () => {
   });
 
   it('persists and returns snapshot when enough samples exist', () => {
-    const db = openDb(root);
+    const db = track(openDb(root));
     upsertSession(db, { id: 's1', cwd: '/tmp' });
     for (let i = 0; i < 6; i++) {
       const u = insertPromptUsage(db, { session_id: 's1', prompt_text: `prompt ${i}` });

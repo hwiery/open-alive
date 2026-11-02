@@ -67,7 +67,11 @@ describe('authorizeUpgrade — remote mode on', () => {
   });
 
   it('trusts loopback when the operator opted in', () => {
-    expect(authorizeUpgrade(up({}), { ...ON, trustLoopback: true })).toEqual({ ok: true, remote: false });
+    expect(authorizeUpgrade(up({ host: 'localhost:3141' }), { ...ON, trustLoopback: true })).toEqual({ ok: true, remote: false });
+  });
+
+  it('does not trust a rebound name reaching loopback', () => {
+    expect(authorizeUpgrade(up({ host: 'evil.example:3141', origin: 'http://evil.example:3141' }), { ...ON, trustLoopback: true })).toMatchObject({ ok: false });
   });
 });
 

@@ -3,7 +3,7 @@
  *
  * Alive keys everything internally by a ULID; providers key by their own session
  * ids. This store is the **only** place those two vocabularies meet. Keeping it
- * single-purpose is what allows the prompt and efficio databases to stay joined
+ * single-purpose is what allows the prompt database to stay joined
  * on `providerSessionId` without ever learning about Alive's ULIDs.
  *
  * `resolve` is idempotent: the same provider session always maps to the same

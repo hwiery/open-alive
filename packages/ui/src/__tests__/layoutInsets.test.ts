@@ -3,25 +3,32 @@ import {
   PROJECT_SIDEBAR_WIDTH,
   REPO_SIDEBAR_WIDTH,
   layoutInsets,
+  sidebarFor,
 } from '../state/layoutInsets.ts';
 
+describe('sidebarFor', () => {
+  it('gives the session views the session sidebar only', () => {
+    expect(sidebarFor('animation')).toBe('sessions');
+    expect(sidebarFor('list')).toBe('sessions');
+  });
+
+  it('gives every other view the repo sidebar', () => {
+    for (const view of ['tickets', 'board', 'workspace', 'spread']) expect(sidebarFor(view), view).toBe('repo');
+  });
+});
+
 describe('layoutInsets', () => {
-  it('reserves the repo sidebar width while the left panel is open', () => {
-    expect(layoutInsets(true).repo).toBe(REPO_SIDEBAR_WIDTH);
+  it('reserves the repo sidebar width in the ticket views', () => {
+    expect(layoutInsets(true, 'tickets')).toEqual({ body: REPO_SIDEBAR_WIDTH, list: REPO_SIDEBAR_WIDTH });
+    expect(layoutInsets(true).body).toBe(REPO_SIDEBAR_WIDTH);
+  });
+
+  it('reserves only the session sidebar in the session views', () => {
+    expect(layoutInsets(true, 'list')).toEqual({ body: PROJECT_SIDEBAR_WIDTH, list: PROJECT_SIDEBAR_WIDTH });
+    expect(layoutInsets(true, 'animation').body).toBe(PROJECT_SIDEBAR_WIDTH);
   });
 
   it('reserves nothing once the left panel is collapsed', () => {
-    expect(layoutInsets(false)).toEqual({ repo: 0, list: 0 });
-  });
-
-  it('stacks both sidebars for the list layout', () => {
-    expect(layoutInsets(true).list).toBe(REPO_SIDEBAR_WIDTH + PROJECT_SIDEBAR_WIDTH);
-  });
-
-  it('never lets the list inset fall behind the repo inset', () => {
-    for (const open of [true, false]) {
-      const insets = layoutInsets(open);
-      expect(insets.list).toBeGreaterThanOrEqual(insets.repo);
-    }
+    for (const view of ['tickets', 'animation', 'list']) expect(layoutInsets(false, view)).toEqual({ body: 0, list: 0 });
   });
 });

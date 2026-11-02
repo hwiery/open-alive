@@ -15,15 +15,17 @@
     "@open-alive/core": "workspace:*",
     "@open-alive/prompt-agent": "workspace:*",
     "@open-alive/prompt-worker": "workspace:*",
+    "@open-alive/storage": "workspace:*",
     "better-sqlite3": "^12.11.1",
+    "cross-spawn": "^7.0.6",
     "node-pty": "1.2.0-beta.11",
     "ws": "^8",
-    "zod": "^4.3.6",
-    "@open-alive/storage": "workspace:*"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@open-alive/ui": "workspace:*",
     "@types/better-sqlite3": "^7.6.12",
+    "@types/cross-spawn": "^6.0.6",
     "@types/ws": "^8"
   }
 }

@@ -1,3 +1,24 @@
+import { TERMINAL_SET_MODE_EVENT } from '../../state/terminalViewSwitch.ts';
+import {
+  DEFAULT_BOTTOM_HEIGHT,
+  DEFAULT_RIGHT_WIDTH,
+  TERMINAL_BOTTOM_HEIGHT_KEY,
+  TERMINAL_MODE_KEY,
+  TERMINAL_RIGHT_WIDTH_KEY,
+  browserStorage,
+  loadDockSize,
+  loadTerminalMode,
+  saveTerminalPref,
+} from '../../state/terminalDock.ts';
+import { useLocalModel } from '../../hooks/useLaunchOptions.ts';
+import { FolderColumns } from './FolderColumns.tsx';
+import {
+  availableLaunchProfiles,
+  resolveLaunchProfile,
+  loadLaunchProfile,
+  saveLaunchProfile,
+  type LaunchProfileId,
+} from '../../state/launchProfile.ts';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import type { MutableRefObject } from 'react';
 import { createPortal } from 'react-dom';
@@ -21,7 +42,8 @@ import { loadOpenTabs, saveOpenTabs } from './openTabsStore.ts';
 import type { PersistedTab } from './openTabsStore.ts';
 import { makeTabId, generateFallbackUuid } from './tabId.ts';
 import { useSpreadView } from './useSpreadView.ts';
-import { getSettings, resolveTerminalTheme, getFontFamily, subscribeSettings } from '../../services/settings.ts';
+import { getSettings, resolveTerminalTheme, getFontFamily, subscribeSettings, TERMINAL_MIN_CONTRAST } from '../../services/settings.ts';
+import { getAppTheme, subscribeAppTheme, type ResolvedTheme } from '../../services/appearance.ts';
 import { loadTerminalFont } from '../../services/terminalFonts.ts';
 import type { AppSettings } from '../../services/settings.ts';
 
@@ -35,14 +57,14 @@ export interface SpawnRequest {
   mode: TerminalSpawnMode;
   source: TerminalSource;
   initialCommand?: string;
-  /** Claude CLI entrypoint: `claude` (default) or `claude agents`. */
-  claudeVariant?: 'claude' | 'agents';
   /** UUID passed via `claude --session-id` to 1:1 pair the tab with a Claude session. */
   claudeSessionId?: string;
   /** Pre-existing Claude session UUID to resume via `claude --resume`. Wins over claudeSessionId. */
   resumeSessionId?: string;
   /** Initial display name passed via `claude -n`. */
   displayName?: string;
+  /** Codex only: run on the server's local model (`OA_LOCAL_MODEL`). */
+  localModel?: boolean;
 }
 
 /** Lightweight SSH tab projection broadcast to App so the sidebar can show a presence indicator. */
@@ -84,7 +106,7 @@ interface ChatOverlayProps {
    */
   listViewActive?: boolean;
   /**
-   * True while a view that renders its own full body-area content (Prompt / Efficio) is active.
+   * True while a view that renders its own full body-area content (e.g. Cost) is active.
    * The fullscreen terminal would cover those views, so when one opens we demote the terminal
    * from 'fullscreen' to the minimized 'popup' mode, then restore the prior mode when the user
    * returns to a view that does not conflict (Animation / List).
@@ -132,6 +154,10 @@ interface ChatOverlayProps {
   spreadActive?: boolean;
   /** Spread tile click → promote that tab (App returns to the prior view and focuses it). */
   onSelectSpreadTile?: (tabId: string) => void;
+  /** Reports the floating layout mode (popup/bottom/right/fullscreen) whenever it changes. */
+  onModeChange?: (mode: TerminalMode) => void;
+  /** Reports the docked panel size (px, undefined = default) on mount and after each resize drag. */
+  onDockSizeChange?: (size: { bottomHeight?: number; rightWidth?: number }) => void;
 }
 
 /**
@@ -139,14 +165,16 @@ interface ChatOverlayProps {
  * you need fresh options (new tab, settings change, etc.). The `allowTransparency`
  * flag stays on so the 'transparent' theme preset can show the parent backdrop.
  */
-function buildTermOptions(s: AppSettings) {
+function buildTermOptions(s: AppSettings, appTheme: ResolvedTheme = getAppTheme()) {
   const t = s.terminal;
   return {
     fontFamily: getFontFamily(t.fontFamilyId),
     fontSize: t.fontSize,
     lineHeight: t.lineHeight,
     letterSpacing: t.letterSpacing,
-    theme: resolveTerminalTheme(t.themeId, t.colorOverrides),
+    theme: resolveTerminalTheme(t.themeId, t.colorOverrides, appTheme),
+    // CLIs pick colours assuming a dark terminal (or a light one); keep every cell readable.
+    minimumContrastRatio: TERMINAL_MIN_CONTRAST,
     cursorBlink: t.cursorBlink,
     cursorStyle: t.cursorStyle,
     cursorWidth: t.cursorWidth,
@@ -222,6 +250,8 @@ function getModeStyle(
   bottomHeight?: number,
   rightWidth?: number,
   leftInset = 0,
+  /** Popup only: horizontal shift from the bottom-centre position, in px. */
+  popupOffsetX = 0,
 ): React.CSSProperties {
   const base: React.CSSProperties = {
     position: 'fixed',
@@ -242,7 +272,7 @@ function getModeStyle(
         ...base,
         bottom: 24,
         left: '50%',
-        transform: 'translateX(-50%)',
+        transform: `translateX(calc(-50% + ${popupOffsetX}px))`,
         width: 'min(640px, 90vw)',
         height: '45vh',
         borderRadius: 16,
@@ -253,7 +283,7 @@ function getModeStyle(
         bottom: 0,
         left: leftInset,
         right: 0,
-        height: bottomHeight ?? '50vh',
+        height: bottomHeight ?? DEFAULT_BOTTOM_HEIGHT,
         borderRadius: 0,
         borderLeft: 'none',
         borderRight: 'none',
@@ -265,7 +295,7 @@ function getModeStyle(
         top: HEADER_HEIGHT,
         right: 0,
         bottom: 0,
-        width: rightWidth ?? 'min(480px, 40vw)',
+        width: rightWidth ?? DEFAULT_RIGHT_WIDTH,
         borderRadius: 0,
         borderRight: 'none',
         borderTop: 'none',
@@ -285,6 +315,17 @@ function getModeStyle(
   }
 }
 
+const POPUP_OFFSET_KEY = 'open-alive:terminal-popup-offset-x';
+
+/**
+ * Popup window: how far it may slide left/right from the centre and still be
+ * fully on screen (the bottom-centre anchor stays, only x moves).
+ */
+export function clampPopupOffset(offset: number, viewportWidth: number, panelWidth: number): number {
+  const max = Math.max(0, (viewportWidth - panelWidth) / 2 - 8);
+  return Math.min(max, Math.max(-max, offset));
+}
+
 // Per-load counter used ONLY for the fallback display label ("Terminal N").
 // The tab *id* is a UUID (see makeTabId) — it must be globally unique.
 let tabCounter = 0;
@@ -294,7 +335,7 @@ function pathBasename(p: string): string {
 }
 
 // Mode button SVG icons
-function ModeIcon({ mode, size = 14 }: { mode: TerminalMode; size?: number }) {
+export function ModeIcon({ mode, size = 14 }: { mode: TerminalMode; size?: number }) {
   const s = size;
   switch (mode) {
     case 'popup':
@@ -326,25 +367,35 @@ function ModeIcon({ mode, size = 14 }: { mode: TerminalMode; size?: number }) {
   }
 }
 
-const MODES: TerminalMode[] = ['popup', 'bottom', 'right', 'fullscreen'];
-const MODE_I18N: Record<TerminalMode, string> = {
-  popup: 'terminal.modePopup',
-  bottom: 'terminal.modeBottom',
-  right: 'terminal.modeRight',
-  fullscreen: 'terminal.modeFullscreen',
-};
 
-export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClose, terminalEventRef, projectPaths = [], listViewActive = false, contentViewActive = false, listLeftInset = 0, leftInset = 0, onSshSessionsChange, onChatClaudeSessionsChange, projectNames, waitingSessionIds, connected = false, onAttach, spreadActive = false, onSelectSpreadTile }: ChatOverlayProps) {
+export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClose, terminalEventRef, projectPaths = [], listViewActive = false, contentViewActive = false, listLeftInset = 0, leftInset = 0, onSshSessionsChange, onChatClaudeSessionsChange, projectNames, waitingSessionIds, connected = false, onAttach, spreadActive = false, onSelectSpreadTile, onModeChange, onDockSizeChange }: ChatOverlayProps) {
   const { t } = useTranslation();
   const isListView = listViewActive;
 
-  const [mode, setMode] = useState<TerminalMode>('popup');
-  // Mode to restore when the user leaves a content view (Prompt/Efficio) after we demoted
+  // Panel position and size survive reloads (see state/terminalDock.ts).
+  const [mode, setMode] = useState<TerminalMode>(() => loadTerminalMode(browserStorage()));
+  // Mode to restore when the user leaves a content view (e.g. Cost) after we demoted
   // a covering fullscreen terminal. Null when there is nothing to restore.
   const restoreModeRef = useRef<TerminalMode | null>(null);
+  const onModeChangeRef = useRef(onModeChange);
+  onModeChangeRef.current = onModeChange;
+  useEffect(() => {
+    onModeChangeRef.current?.(mode);
+    if (mode !== 'fullscreen') saveTerminalPref(browserStorage(), TERMINAL_MODE_KEY, mode);
+  }, [mode]);
+
+  // The panel position is chosen in the header (Terminal › Window); it asks here.
+  useEffect(() => {
+    const onSetMode = (event: Event) => {
+      const next = (event as CustomEvent<TerminalMode>).detail;
+      if (next === 'popup' || next === 'bottom' || next === 'right') setMode(next);
+    };
+    window.addEventListener(TERMINAL_SET_MODE_EVENT, onSetMode);
+    return () => window.removeEventListener(TERMINAL_SET_MODE_EVENT, onSetMode);
+  }, []);
 
   // Demote fullscreen → popup when a content view opens (the fullscreen terminal would otherwise
-  // cover Prompt/Efficio), and restore the prior mode when returning to Animation/List. Runs only
+  // cover a content view), and restore the prior mode when returning to Animation/List. Runs only
   // when contentViewActive flips, so the user's mode choices inside a content view are left intact.
   useEffect(() => {
     if (contentViewActive) {
@@ -360,9 +411,65 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
       restoreModeRef.current = null;
     }
   }, [contentViewActive]);
-  const [bottomHeight, setBottomHeight] = useState<number | undefined>(undefined);
-  const [rightWidth, setRightWidth] = useState<number | undefined>(undefined);
+  const [bottomHeight, setBottomHeight] = useState<number | undefined>(() => {
+    const px = loadDockSize(browserStorage(), TERMINAL_BOTTOM_HEIGHT_KEY);
+    return px === undefined ? undefined : Math.min(Math.max(px, MIN_BOTTOM_HEIGHT), window.innerHeight * MAX_BOTTOM_RATIO);
+  });
+  const [rightWidth, setRightWidth] = useState<number | undefined>(() => {
+    const px = loadDockSize(browserStorage(), TERMINAL_RIGHT_WIDTH_KEY);
+    return px === undefined ? undefined : Math.min(Math.max(px, MIN_RIGHT_WIDTH), window.innerWidth * MAX_RIGHT_RATIO);
+  });
+  // Latest sizes for the drag-end handler, which outlives the render that created it.
+  const dockSizeRef = useRef({ bottomHeight, rightWidth });
+  dockSizeRef.current = { bottomHeight, rightWidth };
+  const onDockSizeChangeRef = useRef(onDockSizeChange);
+  onDockSizeChangeRef.current = onDockSizeChange;
+  // Report the restored size once so the view underneath reserves the right room from the start.
+  useEffect(() => {
+    onDockSizeChangeRef.current?.(dockSizeRef.current);
+  }, []);
   const resizingRef = useRef<'bottom' | 'right' | null>(null);
+  // Popup mode: the window can be slid left/right along the bottom by its title bar.
+  const [popupOffsetX, setPopupOffsetX] = useState(() => {
+    try {
+      const v = Number(localStorage.getItem(POPUP_OFFSET_KEY));
+      return Number.isFinite(v) ? v : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const popupDragRef = useRef<{ startX: number; startOffset: number; width: number } | null>(null);
+  const onPopupDragStart = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    const panel = e.currentTarget.parentElement;
+    popupDragRef.current = { startX: e.clientX, startOffset: popupOffsetX, width: panel?.getBoundingClientRect().width ?? 640 };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  }, [popupOffsetX]);
+  const onPopupDragMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = popupDragRef.current;
+    if (!d) return;
+    setPopupOffsetX(clampPopupOffset(d.startOffset + e.clientX - d.startX, window.innerWidth, d.width));
+  }, []);
+  const onPopupDragEnd = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!popupDragRef.current) return;
+    popupDragRef.current = null;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    setPopupOffsetX((x) => {
+      try {
+        localStorage.setItem(POPUP_OFFSET_KEY, String(Math.round(x)));
+      } catch {
+        // storage disabled: not remembered
+      }
+      return x;
+    });
+  }, []);
+  // A narrower window must not leave the popup stranded off screen.
+  useEffect(() => {
+    const onResize = () => setPopupOffsetX((x) => clampPopupOffset(x, window.innerWidth, Math.min(640, window.innerWidth * 0.9)));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // Stable refs for callbacks — prevents useEffect re-runs on callback reference changes
   const onSpawnRef = useRef(onSpawn);
@@ -389,8 +496,8 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
   const attachedRef = useRef<Set<string>>(new Set());
   // Live mirrors for use inside the stable terminal-event handler closure.
   const tabsRef = useRef<Tab[]>([]);
-  // Default ON per operator preference: new sessions start with
-  // --dangerously-skip-permissions checked, and it remains a one-click opt-out.
+  // Skip-permissions of the chosen launch preset; also applied when a dormant
+  // Claude tab is resumed in place. Default preset: Claude with skip ON.
   const skipPermissionsRef = useRef(true);
 
   const [tabs, setTabs] = useState<Tab[]>([]);
@@ -405,11 +512,12 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
   const [pendingResume, setPendingResume] = useState<{ sessionId: string; cwd?: string } | null>(null);
   const [cwdPickerOpen, setCwdPickerOpen] = useState(false);
   const [cwdTab, setCwdTab] = useState<'local' | 'ssh'>('local');
-  const [claudeVariant, setClaudeVariant] = useState<'claude' | 'agents'>('claude');
   const [customPath, setCustomPath] = useState('');
-  const [skipPermissions, setSkipPermissions] = useState(true);
+  const [launchProfileId, setLaunchProfileId] = useState<LaunchProfileId>(() => loadLaunchProfile(browserStorage()));
+  const localModel = useLocalModel();
+  const activeLaunch = resolveLaunchProfile(launchProfileId, localModel !== null);
   tabsRef.current = tabs;
-  skipPermissionsRef.current = skipPermissions;
+  skipPermissionsRef.current = activeLaunch.skipPermissions;
   const spreadActiveRef = useRef(spreadActive);
   spreadActiveRef.current = spreadActive;
   const activeTabIdRef = useRef(activeTabId);
@@ -509,13 +617,14 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
     mode?: TerminalSpawnMode;
     source?: TerminalSource;
     initialCommand?: string;
-    claudeVariant?: 'claude' | 'agents';
     sshPresetId?: string;
     label?: string;
     /** If set, pass to `claude --resume <uuid>`. Wins over newly-generated claudeSessionId. */
     resumeSessionId?: string;
     /** Optional display name for `claude -n <name>`. */
     displayName?: string;
+    /** Codex only: run on the server's local model. */
+    localModel?: boolean;
   }
 
   // Allocate an xterm instance for `tabId`, mount it into the wrapper, and wire
@@ -584,7 +693,6 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
         mode === 'claude'
           ? opts.resumeSessionId ?? (crypto.randomUUID?.() ?? generateFallbackUuid())
           : undefined;
-      const claudeVariant = opts.claudeVariant ?? 'claude';
 
       setTabs((prev) => [
         ...prev,
@@ -598,7 +706,6 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
           sshPresetId: opts.sshPresetId,
           claudeSessionId,
           mode,
-          claudeVariant,
           displayName: opts.displayName,
         },
       ]);
@@ -617,10 +724,10 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
           mode,
           source,
           initialCommand: opts.initialCommand,
-          claudeVariant,
           claudeSessionId: opts.resumeSessionId ? undefined : claudeSessionId,
           resumeSessionId: opts.resumeSessionId,
           displayName: opts.displayName,
+          ...(opts.localModel ? { localModel: true } : {}),
         });
       });
 
@@ -648,7 +755,6 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
               source: 'local' as const,
               claudeSessionId: p.claudeSessionId,
               mode: p.mode,
-              claudeVariant: p.claudeVariant,
               displayName: p.displayName,
             },
           ],
@@ -691,7 +797,6 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
         cwd: tab.cwd,
         label: tab.label,
         mode: tab.mode ?? 'claude',
-        claudeVariant: tab.claudeVariant,
         displayName: tab.displayName,
       }));
     saveOpenTabs(persisted);
@@ -828,17 +933,22 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
 
   const handlePickCwd = useCallback(
     (cwd?: string) => {
-      const skip = skipPermissions;
+      const { agent, skipPermissions: skip, local } = activeLaunch;
       setCwdPickerOpen(false);
       setCustomPath('');
       if (cwd) {
         // Record this folder as recently-used so the picker can surface it next time.
         setRecentFolders(pushRecentFolder(cwd));
       }
-      createTab({ cwd, dangerousSkip: skip, mode: 'claude', source: 'local', claudeVariant });
+      createTab({ cwd, dangerousSkip: skip, mode: agent, source: 'local', ...(local ? { localModel: true } : {}) });
     },
-    [createTab, skipPermissions, claudeVariant],
+    [createTab, activeLaunch],
   );
+
+  const handleChooseLaunch = useCallback((id: LaunchProfileId) => {
+    setLaunchProfileId(id);
+    saveLaunchProfile(browserStorage(), id);
+  }, []);
 
   const handleRemoveRecentFolder = useCallback((cwd: string) => {
     setRecentFolders(removeRecentFolder(cwd));
@@ -994,6 +1104,7 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
         entry.term.options.lineHeight = opts.lineHeight;
         entry.term.options.letterSpacing = opts.letterSpacing;
         entry.term.options.theme = opts.theme;
+        entry.term.options.minimumContrastRatio = opts.minimumContrastRatio;
         entry.term.options.cursorBlink = opts.cursorBlink;
         entry.term.options.cursorStyle = opts.cursorStyle;
         entry.term.options.cursorWidth = opts.cursorWidth;
@@ -1014,7 +1125,14 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
         });
       }
     };
-    return subscribeSettings(apply);
+    const unsubscribeSettings = subscribeSettings(apply);
+    // 'auto'/'transparent' palettes follow the app theme, which can flip without a
+    // settings write (system mode) — re-apply on every theme change too.
+    const unsubscribeTheme = subscribeAppTheme(() => apply(getSettings()));
+    return () => {
+      unsubscribeSettings();
+      unsubscribeTheme();
+    };
   }, [activeTabId]);
 
   // ResizeObserver for the wrapper — fit the active tab continuously.
@@ -1132,7 +1250,6 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
         skipPermissions: skipPermissionsRef.current,
         mode: tab?.mode ?? 'claude',
         source: 'local',
-        claudeVariant: tab?.claudeVariant ?? 'claude',
         resumeSessionId: claudeSessionId,
         displayName: tab?.displayName,
       });
@@ -1210,17 +1327,27 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
           Math.max(window.innerHeight - e.clientY, MIN_BOTTOM_HEIGHT),
           window.innerHeight * MAX_BOTTOM_RATIO,
         );
+        dockSizeRef.current = { ...dockSizeRef.current, bottomHeight: h };
         setBottomHeight(h);
       } else if (resizingRef.current === 'right') {
         const w = Math.min(
           Math.max(window.innerWidth - e.clientX, MIN_RIGHT_WIDTH),
           window.innerWidth * MAX_RIGHT_RATIO,
         );
+        dockSizeRef.current = { ...dockSizeRef.current, rightWidth: w };
         setRightWidth(w);
       }
     };
 
     const onMouseUp = () => {
+      const size = dockSizeRef.current;
+      if (resizingRef.current === 'bottom' && size.bottomHeight !== undefined) {
+        saveTerminalPref(browserStorage(), TERMINAL_BOTTOM_HEIGHT_KEY, size.bottomHeight);
+      } else if (resizingRef.current === 'right' && size.rightWidth !== undefined) {
+        saveTerminalPref(browserStorage(), TERMINAL_RIGHT_WIDTH_KEY, size.rightWidth);
+      }
+      // Reported once per drag, not per mousemove, so the view below reflows once.
+      onDockSizeChangeRef.current?.(size);
       resizingRef.current = null;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
@@ -1290,7 +1417,7 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
     ? getListViewStyle(listLeftInset)
     : spreadActive
       ? getSpreadViewStyle(leftInset)
-      : getModeStyle(mode, bottomHeight, rightWidth, leftInset);
+      : getModeStyle(mode, bottomHeight, rightWidth, leftInset, popupOffsetX);
   // In list/spread view with no open tabs, hide the terminal surface so the empty-state
   // rendered in the body shows through. Opening/resuming a tab brings the overlay back.
   const listViewEmpty = isListView && !hasTabs;
@@ -1298,7 +1425,7 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
   const surfaceVisible = open || spreadActive;
   const rootStyle: React.CSSProperties = {
     ...layoutStyle,
-    transition: resizingRef.current ? 'none' : OVERLAY_TRANSITION,
+    transition: resizingRef.current || popupDragRef.current ? 'none' : OVERLAY_TRANSITION,
     opacity: listViewEmpty || spreadViewEmpty ? 0 : surfaceVisible ? 1 : 0,
     pointerEvents: listViewEmpty || spreadViewEmpty || !surfaceVisible ? 'none' : 'auto',
   };
@@ -1377,8 +1504,12 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
           }}
         />
       )}
-      {/* Header */}
+      {/* Header — in popup mode it is also the handle for sliding the window left/right. */}
       <div
+        data-testid="terminal-title-bar"
+        {...(!isListView && !spreadActive && mode === 'popup'
+          ? { onPointerDown: onPopupDragStart, onPointerMove: onPopupDragMove, onPointerUp: onPopupDragEnd, onPointerCancel: onPopupDragEnd, title: t('terminal.dragHint') }
+          : {})}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -1386,6 +1517,7 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
           padding: '10px 16px',
           borderBottom: '1px solid var(--border-color)',
           flexShrink: 0,
+          ...(!isListView && !spreadActive && mode === 'popup' ? { cursor: 'ew-resize', userSelect: 'none', touchAction: 'none' } : {}),
         }}
       >
         <span
@@ -1402,37 +1534,8 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
 
         {!isListView && !spreadActive && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            {/* Mode toggle buttons. Fullscreen is disabled while a content view (Prompt/Efficio)
-                is active, since it would cover that view. */}
-            {MODES.map((m) => {
-              const disabled = contentViewActive && m === 'fullscreen';
-              return (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  disabled={disabled}
-                  title={disabled ? t('terminal.modeFullscreenDisabled') : t(MODE_I18N[m])}
-                  style={{
-                    width: 28,
-                    height: 28,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: mode === m ? 'rgba(88, 166, 255, 0.15)' : 'transparent',
-                    border: 'none',
-                    borderRadius: 6,
-                    color: mode === m ? 'var(--accent-blue)' : 'var(--text-secondary)',
-                    cursor: disabled ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s ease',
-                    opacity: disabled ? 0.25 : mode === m ? 1 : 0.6,
-                  }}
-                >
-                  <ModeIcon mode={m} />
-                </button>
-              );
-            })}
-
-            <div style={{ width: 1, height: 16, background: 'var(--border-color)', margin: '0 6px' }} />
+            {/* Panel position (floating / bottom / right) and the full layout are
+                chosen in the header now; only collapse stays on the panel. */}
 
             {/* Collapse button (minimize) */}
             <button
@@ -1563,7 +1666,7 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
                   background: 'var(--accent-red, #f85149)',
                   border: '1px solid var(--accent-red, #f85149)',
                   borderRadius: 8,
-                  color: '#fff',
+                  color: 'var(--on-accent)',
                   cursor: 'pointer',
                 }}
               >
@@ -1681,8 +1784,9 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
         >
           <div
             style={{
-              width: 'min(640px, 92vw)',
-              maxHeight: 'min(92vh, 800px)',
+              width: cwdTab === 'local' ? 'min(1400px, 96vw)' : 'min(640px, 92vw)',
+              height: cwdTab === 'local' ? 'min(96vh, 1000px)' : undefined,
+              maxHeight: 'min(96vh, 1000px)',
               background: 'var(--bg-secondary)',
               border: '1px solid var(--border-color)',
               borderRadius: 12,
@@ -1755,216 +1859,17 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
             {/* Tab content (scrollable region) */}
             <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
               {cwdTab === 'local' ? (
-                <>
-                  {/* Quick select: active projects + recent folders merged
-                      under one section so the same intent isn't split. */}
-                  {(() => {
-                    const activeSet = new Set(uniquePaths);
-                    const visibleRecent = recentFolders.filter((p) => !activeSet.has(p));
-                    if (uniquePaths.length === 0 && visibleRecent.length === 0) return null;
-                    return (
-                      <div style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <div style={{ padding: '8px 16px 4px', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', opacity: 0.5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          {t('terminal.quickSelect')}
-                        </div>
-                        <div style={{ overflowY: 'auto', maxHeight: 240 }}>
-                          {uniquePaths.map((cwd) => (
-                            <button
-                              key={cwd}
-                              onClick={() => handlePickCwd(cwd)}
-                              style={{
-                                width: '100%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 8,
-                                padding: '7px 16px',
-                                background: 'transparent',
-                                border: 'none',
-                                cursor: 'pointer',
-                                textAlign: 'left',
-                                transition: 'background 0.15s ease',
-                                color: 'var(--text-primary)',
-                              }}
-                              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hover)'; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                            >
-                              <span style={{ fontSize: 12, opacity: 0.6 }}>&#9733;</span>
-                              <span style={{ fontSize: 12, fontWeight: 500 }}>{pathBasename(cwd)}</span>
-                              <span style={{ fontSize: 10, color: 'var(--text-secondary)', opacity: 0.4, marginLeft: 'auto', fontFamily: 'var(--font-mono)' }}>{cwd}</span>
-                            </button>
-                          ))}
-                          {visibleRecent.map((cwd) => (
-                            <div
-                              key={cwd}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                width: '100%',
-                                transition: 'background 0.15s ease',
-                              }}
-                              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(63, 185, 80, 0.08)'; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                            >
-                              <button
-                                onClick={() => handlePickCwd(cwd)}
-                                title={cwd}
-                                style={{
-                                  flex: 1,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 8,
-                                  padding: '7px 16px',
-                                  background: 'transparent',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  textAlign: 'left',
-                                  color: 'var(--text-primary)',
-                                  minWidth: 0,
-                                }}
-                              >
-                                <span style={{ fontSize: 12, color: 'var(--accent-green)' }}>⟲</span>
-                                <span style={{ fontSize: 12, fontWeight: 500, flexShrink: 0 }}>{pathBasename(cwd)}</span>
-                                <span style={{ fontSize: 10, color: 'var(--text-secondary)', opacity: 0.45, fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{cwd}</span>
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleRemoveRecentFolder(cwd); }}
-                                title={t('terminal.menu.removeRecentFolder')}
-                                aria-label={t('terminal.menu.removeRecentFolder')}
-                                style={{
-                                  background: 'transparent',
-                                  border: 'none',
-                                  color: 'var(--text-secondary)',
-                                  opacity: 0.4,
-                                  cursor: 'pointer',
-                                  fontSize: 12,
-                                  padding: '4px 12px',
-                                  flexShrink: 0,
-                                }}
-                                onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.4'; }}
-                              >
-                                ×
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Browse: directory navigation + manual path entry */}
-                  <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ padding: '8px 16px 4px', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', opacity: 0.5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      {t('terminal.browseSection')}
-                    </div>
-                    {/* Current path bar — navigation only; the launch action
-                        now lives in the unified footer bar below. */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderBottom: '1px solid var(--border-color)' }}>
-                      {browseCurrentPath !== '/' && (
-                        <button
-                          onClick={() => {
-                            const parent = browseCurrentPath.replace(/\/[^/]+\/?$/, '') || '/';
-                            fetchBrowse(parent);
-                          }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--text-secondary)',
-                            cursor: 'pointer',
-                            fontSize: 14,
-                            padding: '2px 6px',
-                            flexShrink: 0,
-                          }}
-                          title={t('terminal.parentDir')}
-                        >
-                          &#8592;
-                        </button>
-                      )}
-                      <div style={{
-                        flex: 1,
-                        fontSize: 11,
-                        fontFamily: 'var(--font-mono)',
-                        color: 'var(--text-primary)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        direction: 'rtl',
-                        textAlign: 'left',
-                      }}>
-                        <span dir="ltr">{browseCurrentPath}</span>
-                      </div>
-                    </div>
-
-                    {/* Directory listing */}
-                    <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, maxHeight: 320 }}>
-                      {browseLoading ? (
-                        <div style={{ padding: 16, textAlign: 'center', fontSize: 12, color: 'var(--text-secondary)' }}>...</div>
-                      ) : browseDirs.length === 0 ? (
-                        <div style={{ padding: 16, textAlign: 'center', fontSize: 12, color: 'var(--text-secondary)', opacity: 0.5 }}>
-                          {t('terminal.emptyDir')}
-                        </div>
-                      ) : (
-                        browseDirs.map((dir) => (
-                          <button
-                            key={dir.path}
-                            onClick={() => fetchBrowse(dir.path)}
-                            onDoubleClick={() => handlePickCwd(dir.path)}
-                            style={{
-                              width: '100%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 8,
-                              padding: '6px 16px',
-                              background: 'transparent',
-                              border: 'none',
-                              cursor: 'pointer',
-                              textAlign: 'left',
-                              transition: 'background 0.15s ease',
-                              color: 'var(--text-primary)',
-                              fontSize: 12,
-                            }}
-                            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hover)'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                          >
-                            <span style={{ opacity: 0.5, fontSize: 11 }}>&#128193;</span>
-                            <span>{dir.name}</span>
-                          </button>
-                        ))
-                      )}
-                    </div>
-
-                    {/* Manual path input */}
-                    <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border-color)' }}>
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          const val = customPath.trim();
-                          if (val) handlePickCwd(val);
-                        }}
-                      >
-                        <input
-                          type="text"
-                          value={customPath}
-                          onChange={(e) => setCustomPath(e.target.value)}
-                          placeholder={t('terminal.customPathPlaceholder')}
-                          style={{
-                            width: '100%',
-                            padding: '6px 10px',
-                            background: 'var(--surface-2)',
-                            border: '1px solid var(--border-color)',
-                            borderRadius: 6,
-                            color: 'var(--text-primary)',
-                            fontSize: 11,
-                            fontFamily: 'var(--font-mono)',
-                            outline: 'none',
-                          }}
-                          onFocus={(e) => { e.target.style.borderColor = 'var(--accent-blue)'; }}
-                          onBlur={(e) => { e.target.style.borderColor = 'var(--border-color)'; }}
-                        />
-                      </form>
-                    </div>
-                  </div>
-                </>
+                <FolderColumns
+                  quick={uniquePaths}
+                  recent={recentFolders}
+                  onRemoveRecent={handleRemoveRecentFolder}
+                  onPick={handlePickCwd}
+                  browsePath={browseCurrentPath}
+                  browseDirs={browseDirs}
+                  browseLoading={browseLoading}
+                  onBrowse={fetchBrowse}
+                  manualPath={{ value: customPath, onChange: setCustomPath, onSubmit: handlePickCwd }}
+                />
               ) : (
                 /* SSH remote tab: presets + management entry point */
                 <div>
@@ -2035,59 +1940,44 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
               )}
             </div>
 
-            {/* Footer: unified launch bar (Local tab only). Groups "what to
-                run" (claude vs claude agents) + "how" (skip permissions) +
-                "where" (current path) + the primary start action in one place.
+            {/* Footer: unified launch bar (Local tab only). Groups "how" (skip
+                permissions) + "where" (current path) + the primary start action.
                 The SSH tab has no footer — presets launch on click. */}
             {cwdTab === 'local' && (
               <div style={{ borderTop: '1px solid var(--border-color)', background: 'var(--bg-primary)', flexShrink: 0, padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                  {/* Claude entrypoint segmented toggle */}
-                  <div style={{ display: 'flex', border: '1px solid var(--border-color)', borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
-                    {([
-                      { id: 'claude' as const, label: 'claude' },
-                      { id: 'agents' as const, label: 'claude agents' },
-                    ]).map((v) => (
-                      <button
-                        key={v.id}
-                        onClick={() => setClaudeVariant(v.id)}
-                        title={v.id === 'agents' ? t('terminal.variantAgentsHint') : t('terminal.variantClaudeHint')}
-                        style={{
-                          padding: '4px 10px',
-                          fontSize: 11,
-                          fontWeight: 600,
-                          fontFamily: 'var(--font-mono)',
-                          border: 'none',
-                          cursor: 'pointer',
-                          background: claudeVariant === v.id ? 'var(--accent-blue)' : 'transparent',
-                          color: claudeVariant === v.id ? '#fff' : 'var(--text-secondary)',
-                          transition: 'background 0.15s ease, color 0.15s ease',
-                        }}
-                      >
-                        {v.label}
-                      </button>
-                    ))}
+                  {/* Launch presets: which agent CLI, with or without skipping permissions */}
+                  <div role="radiogroup" aria-label={t('terminal.launch.label')} style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {availableLaunchProfiles(localModel !== null).map((profile) => {
+                      const selected = profile.id === activeLaunch.id;
+                      const accent = profile.skipPermissions ? 'var(--accent-orange, #d29922)' : 'var(--accent-blue)';
+                      return (
+                        <button
+                          key={profile.id}
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => handleChooseLaunch(profile.id)}
+                          style={{
+                            padding: '6px 12px',
+                            fontSize: 12,
+                            fontWeight: 600,
+                            borderRadius: 8,
+                            cursor: 'pointer',
+                            border: `1px solid ${selected ? accent : 'var(--border-color)'}`,
+                            background: selected ? 'var(--hover)' : 'transparent',
+                            color: selected ? accent : 'var(--text-secondary)',
+                          }}
+                        >
+                          {t(`terminal.launch.${profile.id}`, { model: localModel?.model ?? '' })}
+                        </button>
+                      );
+                    })}
                   </div>
-                  {/* Skip permissions — applies to whichever entrypoint is chosen */}
-                  <label
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      cursor: 'pointer',
-                      fontSize: 11,
-                      marginLeft: 'auto',
-                      color: skipPermissions ? 'var(--accent-orange, #d29922)' : 'var(--text-secondary)',
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={skipPermissions}
-                      onChange={(e) => setSkipPermissions(e.target.checked)}
-                      style={{ accentColor: 'var(--accent-orange, #d29922)' }}
-                    />
-                    {t('terminal.skipPermissions')}
-                  </label>
+                  {activeLaunch.skipPermissions && (
+                    <span style={{ fontSize: 11, color: 'var(--accent-orange, #d29922)' }}>
+                      {t(activeLaunch.agent === 'codex' ? 'terminal.launch.codexSkipWarning' : 'terminal.skipPermissionsWarning')}
+                    </span>
+                  )}
                 </div>
                 {/* Resolved target path */}
                 <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', opacity: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'rtl', textAlign: 'left' }}>
@@ -2102,7 +1992,7 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
                     fontSize: 12,
                     fontWeight: 600,
                     background: 'var(--accent-blue)',
-                    color: '#fff',
+                    color: 'var(--on-accent)',
                     border: 'none',
                     borderRadius: 6,
                     cursor: 'pointer',

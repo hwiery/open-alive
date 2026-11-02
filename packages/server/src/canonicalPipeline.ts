@@ -105,7 +105,7 @@ export interface LegacyManagedRecord {
   claudeSessionId: string;
   cwd?: string;
   displayName?: string;
-  mode: 'claude' | 'shell';
+  mode: 'claude' | 'codex' | 'shell';
   claudeVariant?: 'claude' | 'agents';
   createdAt: number;
   lastActive: number;

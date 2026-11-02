@@ -34,11 +34,18 @@ npm i -g "$ROOT/npm-dist/$TARBALL" --force > /dev/null 2>&1
 rm -f "$ROOT/npm-dist/$TARBALL"
 
 echo "[4/4] Restarting server..."
-open-alive stop > /dev/null 2>&1 || true
-# Brief pause so the previous process fully releases :3141 before the new
-# one tries to bind — otherwise users see EADDRINUSE on the very next start.
-sleep 1
-open-alive start --no-open
+# With autostart enabled, launchd owns the server (KeepAlive) and `open-alive
+# stop` cannot see it — restart it through launchd so the new code is loaded.
+if [ "$(uname)" = "Darwin" ] && launchctl print "gui/$(id -u)/com.openalive.server" > /dev/null 2>&1; then
+  launchctl kickstart -k "gui/$(id -u)/com.openalive.server"
+  echo "open-alive restarted by launchd (autostart)."
+else
+  open-alive stop > /dev/null 2>&1 || true
+  # Brief pause so the previous process fully releases :3141 before the new
+  # one tries to bind — otherwise users see EADDRINUSE on the very next start.
+  sleep 1
+  open-alive start --no-open
+fi
 
 INSTALLED_VERSION=$(open-alive --help 2>/dev/null | head -1 || echo "unknown")
 echo ""

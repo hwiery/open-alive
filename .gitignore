@@ -9,18 +9,16 @@ npm-dist/
 !.env.example
 
 /output/
-# Efficio 영속 저장소(세션 제목·경로 포함) 및 파이썬 캐시
+# 로컬 SQLite 파일 및 파이썬 캐시
 *.db
 __pycache__/
 *.pyc
 
 # Playwright MCP 캐시 + 일회성 E2E 증거 스크린샷
 .playwright-mcp/
-efficio-*.png
 
 # Local tool state and personal settings — never publish
 .claude/settings.local.json
-.efficio-venv/
 .superpowers/
 .pytest_cache/
 .orca-worktree-trash/

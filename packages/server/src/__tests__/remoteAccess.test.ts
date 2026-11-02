@@ -1,3 +1,4 @@
+import { delimiter } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
   loadRemoteAccessConfig,
@@ -90,6 +91,9 @@ describe('isRemoteAllowed', () => {
     expect(isRemoteAllowed('POST', '/api/tickets/t_1/reply')).toBe(true);
     expect(isRemoteAllowed('GET', '/api/remote/projects')).toBe(true);
     expect(isRemoteAllowed('GET', '/health')).toBe(true);
+    expect(isRemoteAllowed('GET', '/api/claude/models')).toBe(true);
+    expect(isRemoteAllowed('GET', '/api/codex/models')).toBe(true);
+    expect(isRemoteAllowed('POST', '/api/claude/models')).toBe(false);
   });
   it('denies everything not named, including new routes', () => {
     for (const [m, p] of [
@@ -135,10 +139,26 @@ describe('authorizeRequest — remote enabled', () => {
   });
   it('trusts loopback only when explicitly opted in', () => {
     const out = authorizeRequest(
-      { method: 'GET', pathname: '/api/fs/browse', headers: {}, remoteAddress: '127.0.0.1' },
+      { method: 'GET', pathname: '/api/fs/browse', headers: { host: 'localhost:3141' }, remoteAddress: '127.0.0.1' },
       config({ trustLoopback: true }),
     );
     expect(out).toEqual({ kind: 'local' });
+  });
+  it('does not trust a loopback connection that arrives under a rebound public name', () => {
+    // DNS rebinding: evil.example resolves to 127.0.0.1, the browser sends a
+    // same-origin request from this machine with Host: evil.example.
+    for (const host of ['evil.example:3141', 'evil.example', undefined]) {
+      const out = authorizeRequest(
+        { method: 'POST', pathname: '/api/settings/mobile/tokens', headers: host ? { host } : {}, remoteAddress: '127.0.0.1' },
+        config({ trustLoopback: true }),
+      );
+      expect(out).toMatchObject({ kind: 'reject', status: 401 });
+    }
+    for (const host of ['127.0.0.1:3141', '[::1]:3141', 'localhost']) {
+      expect(
+        authorizeRequest({ method: 'GET', pathname: '/api/tickets', headers: { host }, remoteAddress: '127.0.0.1' }, config({ trustLoopback: true })),
+      ).toEqual({ kind: 'local' });
+    }
   });
   it('accepts a valid token on a whitelisted route', () => {
     const out = authorizeRequest(
@@ -224,7 +244,7 @@ describe('loadRemoteAccessConfig', () => {
     const r = loadRemoteAccessConfig({
       OPEN_ALIVE_REMOTE: '1',
       OPEN_ALIVE_TOKEN: LONG,
-      OPEN_ALIVE_TICKET_ROOTS: '/work:/src',
+      OPEN_ALIVE_TICKET_ROOTS: ['/work', '/src'].join(delimiter),
       OPEN_ALIVE_REMOTE_SSH_HOSTS: 'build.local',
     });
     expect(r).toMatchObject({

@@ -34,4 +34,19 @@ export interface UsageLimitsSnapshot {
    * The UI keeps rendering them, dimmed, rather than dropping the pills.
    */
   stale: boolean;
+  /**
+   * Codex subscription windows, read from the newest Codex session log (Codex
+   * writes its rate limits there after every turn). Null when Codex is not
+   * installed or has not run yet; `observedAt` says how fresh the numbers are.
+   */
+  codex?: CodexUsage | null;
+}
+
+export interface CodexUsage {
+  fiveHour: UsageWindow | null;
+  sevenDay: UsageWindow | null;
+  /** Unix ms of the Codex event the numbers came from. */
+  observedAt: number;
+  /** True when the latest account read failed (logged out, Codex error); the numbers are last-known. */
+  stale?: boolean;
 }

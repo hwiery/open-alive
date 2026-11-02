@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ensureContrast, isTransparent } from './contrast.ts';
 
 /**
  * App-wide user settings.
@@ -227,6 +228,40 @@ export function getThemeById(id: string): TerminalTheme {
   return (TERMINAL_THEMES.find(t => t.id === id) ?? TERMINAL_THEMES[0]!).theme;
 }
 
+/** Pseudo-preset: GitHub Dark on the dark app theme, GitHub Light on the light one. */
+export const AUTO_TERMINAL_THEME_ID = 'auto';
+const TRANSPARENT_THEME_ID = 'transparent';
+
+/** App chrome theme a terminal palette is resolved against (mirrors services/appearance.ts). */
+export type AppThemeName = 'dark' | 'light';
+
+/**
+ * xterm `minimumContrastRatio`: every cell's foreground is nudged until it reaches
+ * this ratio against its background. Covers ANSI, 256-colour and truecolor output
+ * from CLIs that assume a dark terminal (white text) on a light palette, and the
+ * reverse. 4.5 = WCAG AA for body text.
+ */
+export const TERMINAL_MIN_CONTRAST = 4.5;
+
+/** The background a `transparent` terminal actually sits on (the frame token's base colour). */
+export const APP_TERMINAL_BACKDROP: Record<AppThemeName, string> = { dark: '#0d1117', light: '#ffffff' };
+
+function basePalette(themeId: string, appTheme: AppThemeName): TerminalTheme {
+  if (themeId === AUTO_TERMINAL_THEME_ID) {
+    return getThemeById(appTheme === 'light' ? 'github-light' : 'github-dark');
+  }
+  if (themeId === TRANSPARENT_THEME_ID) {
+    // The backdrop is the app frame, so the text palette must follow the app theme.
+    // A zero-alpha rgba keeps the transparency while telling xterm which colour
+    // to measure contrast against (it ignores alpha there).
+    const palette = getThemeById(appTheme === 'light' ? 'github-light' : 'github-dark');
+    const backdrop = APP_TERMINAL_BACKDROP[appTheme];
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(backdrop.slice(i, i + 2), 16));
+    return { ...palette, background: `rgba(${r}, ${g}, ${b}, 0)`, cursorAccent: backdrop };
+  }
+  return getThemeById(themeId);
+}
+
 /** Theme slots the user may override individually on top of the chosen preset. */
 export const TERMINAL_COLOR_KEYS = [
   'background', 'foreground', 'cursor',
@@ -251,16 +286,45 @@ function sanitizeColorOverrides(raw: unknown): TerminalColorOverrides {
 }
 
 /**
- * Preset + per-slot overrides. cursorAccent follows an overridden background so a
+ * Preset + per-slot overrides, resolved against the app theme for the presets that
+ * follow it ('auto', 'transparent'). cursorAccent follows an overridden background so a
  * block cursor stays legible when the user flips the background colour.
  */
-export function resolveTerminalTheme(themeId: string, overrides: TerminalColorOverrides): TerminalTheme {
-  const base = getThemeById(themeId);
+export function resolveTerminalTheme(
+  themeId: string,
+  overrides: TerminalColorOverrides,
+  appTheme: AppThemeName = 'dark',
+): TerminalTheme {
+  const base = basePalette(themeId, appTheme);
   return {
     ...base,
     ...overrides,
     cursorAccent: overrides.background ?? base.cursorAccent,
   };
+}
+
+/**
+ * The colours the terminal will actually draw: foreground and ANSI slots pushed to
+ * TERMINAL_MIN_CONTRAST against the effective background, as xterm does per cell.
+ * For previews only — xterm itself receives the raw theme plus minimumContrastRatio.
+ */
+export function displayTerminalTheme(theme: TerminalTheme, appTheme: AppThemeName = 'dark'): TerminalTheme {
+  const bg = effectiveTerminalBackground(theme, appTheme);
+  const fix = (c: string) => ensureContrast(c, bg, TERMINAL_MIN_CONTRAST);
+  return {
+    ...theme,
+    foreground: fix(theme.foreground),
+    black: fix(theme.black), red: fix(theme.red), green: fix(theme.green), yellow: fix(theme.yellow),
+    blue: fix(theme.blue), magenta: fix(theme.magenta), cyan: fix(theme.cyan), white: fix(theme.white),
+    brightBlack: fix(theme.brightBlack), brightRed: fix(theme.brightRed), brightGreen: fix(theme.brightGreen),
+    brightYellow: fix(theme.brightYellow), brightBlue: fix(theme.brightBlue), brightMagenta: fix(theme.brightMagenta),
+    brightCyan: fix(theme.brightCyan), brightWhite: fix(theme.brightWhite),
+  };
+}
+
+/** Opaque colour behind the terminal text (the app backdrop for transparent palettes). */
+export function effectiveTerminalBackground(theme: TerminalTheme, appTheme: AppThemeName = 'dark'): string {
+  return isTransparent(theme.background) ? APP_TERMINAL_BACKDROP[appTheme] : theme.background;
 }
 
 // ── Font presets ───────────────────────────────────────────────────────────
@@ -348,7 +412,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     waiting: { enabled: true, volume: 0.7 },
   },
   terminal: {
-    themeId: 'github-dark',
+    themeId: AUTO_TERMINAL_THEME_ID,
     fontFamilyId: 'sf-mono',
     fontSize: 13,
     lineHeight: 1.4,

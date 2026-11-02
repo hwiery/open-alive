@@ -163,7 +163,7 @@ export function ResourceAlert({ alert, onDismiss }: Props) {
             style={{
               padding: '9px 22px',
               background: 'var(--accent-red)',
-              color: '#fff',
+              color: 'var(--on-accent)',
               border: 'none',
               borderRadius: 8,
               fontSize: 13,

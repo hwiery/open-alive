@@ -1,7 +1,7 @@
 import { useState } from 'react';
+import { browserStorage, readTerminalPref, saveTerminalPref } from '../state/terminalDock.ts';
 import { useTranslation } from 'react-i18next';
 import { COLORS, screen, topBar, secondaryButton, input, TYPE, clamp1 } from './styles.ts';
-import { PullToRefresh } from './PullToRefresh.tsx';
 import { MobileXterm } from './MobileXterm.tsx';
 import type { TermFeed } from './termFeed.ts';
 
@@ -21,6 +21,8 @@ export interface MobileTerminalProps {
   onKey: (sequence: string) => void;
   /** Re-attach and replay the scrollback — the only refresh a live pty has. */
   onRefresh?: () => void | Promise<void>;
+  /** Rows the pane can show; passed only for a pty the phone owns (see MobileXterm). */
+  onFitRows?: (rows: number) => void;
 }
 
 /**
@@ -33,8 +35,13 @@ const KEYS: ReadonlyArray<{ label: string; sequence: string }> = [
   { label: 'Tab', sequence: '\t' },
   { label: '↑', sequence: '\x1b[A' },
   { label: '↓', sequence: '\x1b[B' },
+  { label: '←', sequence: '\x1b[D' },
+  { label: '→', sequence: '\x1b[C' },
   { label: 'Enter', sequence: '\r' },
+  { label: 'Ctrl-D', sequence: '\x04' },
 ];
+
+const ZOOM_KEY = 'open-alive:mobile-terminal-zoom';
 
 /**
  * A pty on a phone.
@@ -44,9 +51,16 @@ const KEYS: ReadonlyArray<{ label: string; sequence: string }> = [
  * into a character-level emulator with a soft keyboard is worse than useless —
  * "read what it said, answer the prompt, press Ctrl-C" is what a phone is for.
  */
-export function MobileTerminal({ title, subtitle, feed, hasOutput, canType, exited, onBack, onSend, onKey, onRefresh }: MobileTerminalProps) {
+export function MobileTerminal({ title, subtitle, feed, hasOutput, canType, exited, onBack, onSend, onKey, onRefresh, onFitRows }: MobileTerminalProps) {
   const { t } = useTranslation();
   const [line, setLine] = useState('');
+  // Fit shrinks an 80+ column pty to the phone width; zoom keeps it readable and scrolls sideways.
+  const [zoomed, setZoomed] = useState(() => readTerminalPref(browserStorage(), ZOOM_KEY) === '1');
+  const toggleZoom = () => {
+    const next = !zoomed;
+    setZoomed(next);
+    saveTerminalPref(browserStorage(), ZOOM_KEY, next ? '1' : '0');
+  };
 
   const send = () => {
     const text = line.trim();
@@ -69,17 +83,41 @@ export function MobileTerminal({ title, subtitle, feed, hasOutput, canType, exit
           <span style={{ ...TYPE.title, ...clamp1 }}>{title}</span>
           {subtitle && <span style={{ ...TYPE.meta, ...clamp1, color: COLORS.muted }}>{subtitle}</span>}
         </span>
+        {onRefresh && (
+          <button
+            onClick={() => { void onRefresh(); }}
+            aria-label={t('mobile.terminalReattach')}
+            title={t('mobile.terminalReattach')}
+            style={{ ...secondaryButton, ...TYPE.button, marginLeft: 'auto', minHeight: 36, padding: '0 10px', flexShrink: 0 }}
+          >
+            ↻
+          </button>
+        )}
+        <button
+          onClick={toggleZoom}
+          aria-pressed={zoomed}
+          aria-label={t('mobile.terminalZoom')}
+          style={{
+            ...secondaryButton, ...TYPE.button, marginLeft: onRefresh ? 0 : 'auto', minHeight: 36, padding: '0 10px', flexShrink: 0,
+            color: zoomed ? COLORS.accent : COLORS.text,
+            borderColor: zoomed ? COLORS.accent : COLORS.border,
+          }}
+        >
+          {zoomed ? t('mobile.terminalFit') : t('mobile.terminalZoom')}
+        </button>
       </div>
 
-      <PullToRefresh onRefresh={onRefresh} style={{ padding: '8px 4px' }}>
+      {/* No pull-to-refresh: a downward swipe here means "scroll back", and a
+          refresh clears the output mid-read. Re-attach is the ↻ button. */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '8px 4px' }}>
         {!hasOutput && (
           <p style={{ ...TYPE.meta, color: COLORS.muted, margin: '0 8px 8px' }}>{t('mobile.terminalAttaching')}</p>
         )}
-        <MobileXterm feed={feed} />
+        <MobileXterm feed={feed} zoomed={zoomed} onFitRows={onFitRows} />
         {exited && (
           <p style={{ ...TYPE.meta, color: 'var(--accent-red)', margin: '12px 8px 0' }}>{t('mobile.terminalGone')}</p>
         )}
-      </PullToRefresh>
+      </div>
 
       {canType ? (
         <div style={{ borderTop: `1px solid ${COLORS.border}`, padding: '8px 12px calc(8px + env(safe-area-inset-bottom))', flexShrink: 0 }}>

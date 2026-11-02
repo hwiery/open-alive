@@ -7,7 +7,8 @@
  * `codexSupervisor.ts`) so the runner can be driven in tests with a stub that
  * emits canned stream-json — no `claude` install, no live model calls.
  */
-import { spawn } from 'node:child_process';
+import { delimiter } from 'node:path';
+import { resolveCli, spawnCli } from './spawnCli.js';
 import type { Readable } from 'node:stream';
 import { augmentPath } from '@open-alive/core';
 import { createStreamJsonParser, type StreamEvent, type StreamResult } from './streamJson.js';
@@ -121,13 +122,15 @@ export function cleanEnv(): NodeJS.ProcessEnv {
 export function consumeHeadless(
   proc: HeadlessProcessHandle,
   onEvent?: (e: StreamEvent) => void,
+  /** Line parser for the agent's stdout; Claude stream-json unless another engine passes its own. */
+  makeParser: (emit: (e: StreamEvent) => void) => { push(chunk: string): void; flush(): void } = createStreamJsonParser,
 ): HeadlessRunHandle {
   let lastResult: StreamResult | null = null;
   let sessionId: string | null = null;
   let stderr = '';
   let settled = false;
 
-  const parser = createStreamJsonParser((e) => {
+  const parser = makeParser((e) => {
     if (e.kind === 'init' && e.sessionId) sessionId = e.sessionId;
     if (e.kind === 'result') {
       lastResult = e.result;
@@ -157,11 +160,10 @@ export function consumeHeadless(
 
 function realSpawn(args: HeadlessSpawnArgs): HeadlessProcessHandle {
   const argv = buildHeadlessArgs(args.goal, args.permissionMode, args.resumeSessionId, args.flags);
-  const child = spawn('claude', argv, {
+  const child = spawnCli(resolveCli('claude', args.env), argv, {
     cwd: args.cwd,
     env: args.env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  }, 'claude');
   return {
     stdout: child.stdout,
     stderr: child.stderr,
@@ -177,7 +179,7 @@ export function runHeadlessClaude(options: HeadlessRunOptions): HeadlessRunHandl
   const permissionMode = options.permissionMode ?? 'bypassPermissions';
   const spawnProcess = options.spawnProcess ?? realSpawn;
   const env = cleanEnv();
-  if (options.pathPrepend) env.PATH = `${options.pathPrepend}:${env.PATH ?? ''}`;
+  if (options.pathPrepend) env.PATH = `${options.pathPrepend}${delimiter}${env.PATH ?? ''}`;
   if (options.extraEnv) Object.assign(env, options.extraEnv);
   const proc = spawnProcess({
     goal: options.goal,
@@ -200,7 +202,8 @@ const PROBE_TIMEOUT_MS = 10_000;
  */
 export function probeLocalClaudeHelp(): Promise<string> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn('claude', ['--help'], { env: cleanEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
+    const env = cleanEnv();
+    const child = spawnCli(resolveCli('claude', env), ['--help'], { env }, 'claude');
     let out = '';
     let done = false;
     const finish = (fn: () => void): void => {

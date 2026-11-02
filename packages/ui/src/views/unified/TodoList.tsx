@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, type HTMLAttributes, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   loadTodos,
@@ -9,7 +9,14 @@ import {
   type TodoItem,
 } from './todoStore.ts';
 
-export function TodoList() {
+interface TodoListProps {
+  /** Spread on the header so a floating container can be dragged by it. */
+  dragHandleProps?: HTMLAttributes<HTMLDivElement>;
+  /** Extra controls at the right of the header (e.g. close). */
+  headerActions?: ReactNode;
+}
+
+export function TodoList({ dragHandleProps, headerActions }: TodoListProps = {}) {
   const { t } = useTranslation();
   const [todos, setTodos] = useState<TodoItem[]>(() => loadTodos());
   const [draft, setDraft] = useState('');
@@ -43,18 +50,22 @@ export function TodoList() {
     >
       {/* Header */}
       <div
-        className="px-5 py-4 text-[13px] font-semibold border-b shrink-0 flex items-center justify-between"
-        style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)', background: 'var(--bg-secondary)' }}
+        {...dragHandleProps}
+        className="px-5 py-4 text-[13px] font-semibold border-b shrink-0 flex items-center justify-between gap-2"
+        style={{ color: 'var(--text-secondary)', borderColor: 'var(--border-color)', background: 'var(--bg-secondary)', ...dragHandleProps?.style }}
       >
         <span>{t('todo.title')}</span>
-        {remaining > 0 && (
-          <span
-            className="px-2.5 py-0.5 rounded-md text-[11px] font-medium"
-            style={{ background: 'var(--accent-blue)20', color: 'var(--accent-blue)' }}
-          >
-            {remaining}
-          </span>
-        )}
+        <span className="flex items-center gap-2">
+          {remaining > 0 && (
+            <span
+              className="px-2.5 py-0.5 rounded-md text-[11px] font-medium"
+              style={{ background: 'var(--accent-blue)20', color: 'var(--accent-blue)' }}
+            >
+              {remaining}
+            </span>
+          )}
+          {headerActions}
+        </span>
       </div>
 
       {/* Quick-add input */}

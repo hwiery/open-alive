@@ -11,7 +11,8 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { resolveRunProfile } from '@open-alive/core';
+import { resolveRunProfile, isTicketModelChoice } from '@open-alive/core';
+import type { TicketModelMap } from '@open-alive/core';
 import type { Ticket, TicketCreateInput } from '@open-alive/core';
 
 const DEFAULT_FILE = join(homedir(), '.open-alive', 'tickets.json');
@@ -24,6 +25,8 @@ export interface TicketStoreOptions {
   maxTickets?: number;
   now?: () => number;
   uuid?: () => string;
+  /** Current tier → model id map (the probed CLI catalogue); fallback ids when absent. */
+  currentModels?: () => TicketModelMap;
 }
 
 export interface TicketStore {
@@ -103,7 +106,17 @@ export function createTicketStore(options: TicketStoreOptions = {}): TicketStore
     async create(input) {
       // Resolve the preset NOW and store the concrete flags alongside it, so a
       // later change to the preset table never rewrites what an old ticket ran with.
-      const profile = resolveRunProfile(input.preset);
+      const models = options.currentModels?.();
+      const profile = resolveRunProfile(input.preset, models);
+      // A direct pick wins; a tier alias is snapshotted to its current full id.
+      const picked = input.model && models && input.model in models
+        ? models[input.model as keyof typeof models]
+        : input.model;
+      // Any non-Claude model id reaching here was already checked against the
+      // local Codex catalogue by the create route: the ticket runs on Codex.
+      const codex = input.model !== undefined && !isTicketModelChoice(input.model);
+      const model = picked ?? profile?.model;
+      const effort = input.effort ?? profile?.effort;
       const ticket: Ticket = {
         id: uuid(),
         seq: nextSeq++,
@@ -116,7 +129,9 @@ export function createTicketStore(options: TicketStoreOptions = {}): TicketStore
         // absent on every ticket that keeps the default.
         ...(input.autoCommit === false ? { autoCommit: false } : {}),
         ...(input.panelReview === false ? { panelReview: false } : {}),
-        ...(profile ? { requestedModel: profile.model, effort: profile.effort } : {}),
+        ...(codex ? { engine: 'codex' as const } : {}),
+        ...(model ? { requestedModel: model } : {}),
+        ...(effort ? { effort } : {}),
         state: 'queued',
         createdAt: now(),
       };

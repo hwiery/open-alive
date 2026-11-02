@@ -4,6 +4,7 @@ import type { Ticket, TicketEvaluation } from '@open-alive/core';
 import { displayStatus, STATUS_COLOR, projectName, ticketLastActivityAt } from '../views/tickets/ticketDisplay.ts';
 import { COLORS, screen, body, card, chip, primaryButton, actionBar, TYPE, clamp1, clamp2 } from './styles.ts';
 import { PullToRefresh } from './PullToRefresh.tsx';
+import { relativeTime } from './sessionStatus.ts';
 
 export interface MobileTicketListProps {
   tickets: Ticket[];
@@ -14,6 +15,8 @@ export interface MobileTicketListProps {
   connected?: boolean;
   /** Refetch, for the pull gesture. Absent = the gesture does nothing. */
   onRefresh?: () => void | Promise<void>;
+  /** Clock for "5분 전"; injectable for tests. */
+  now?: number;
 }
 
 type Filter = 'all' | 'active' | 'decision' | 'done';
@@ -31,7 +34,7 @@ const MATCHES: Record<Filter, (t: Ticket) => boolean> = {
  * Those are the only ones where nothing moves until you act, and on a phone you
  * are usually opening the app precisely because something is stuck.
  */
-export function MobileTicketList({ tickets, evaluations, onOpen, onNew, connected = true, onRefresh }: MobileTicketListProps) {
+export function MobileTicketList({ tickets, evaluations, onOpen, onNew, connected = true, onRefresh, now = Date.now() }: MobileTicketListProps) {
   const { t } = useTranslation();
   const [filter, setFilter] = useState<Filter>('all');
 
@@ -93,15 +96,22 @@ export function MobileTicketList({ tickets, evaluations, onOpen, onNew, connecte
             const status = displayStatus(ticket.state, evaluations[ticket.id]);
             return (
               <button key={ticket.id} style={card} onClick={() => onOpen(ticket.id)}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                {/* State and last movement first: that is what the phone is opened to check. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <span style={{ width: 8, height: 8, borderRadius: 4, background: STATUS_COLOR[status], flexShrink: 0 }} />
+                  <span style={{ ...TYPE.label, fontWeight: 700, color: STATUS_COLOR[status], flexShrink: 0 }}>
+                    {t(`tickets.columns.${status}`)}
+                  </span>
                   <span style={{ ...TYPE.meta, color: COLORS.muted }}>#{ticket.seq}</span>
-                  <span style={{ ...TYPE.meta, ...clamp1, color: COLORS.muted }}>{projectName(ticket.cwd)}</span>
+                  <span style={{ ...TYPE.meta, color: COLORS.muted, marginLeft: 'auto', flexShrink: 0 }}>
+                    {relativeTime(now, ticketLastActivityAt(ticket), t)}
+                  </span>
                 </div>
-                <div style={{ ...TYPE.body, ...clamp2 }}>{ticket.goal}</div>
+                <div style={{ ...TYPE.body, ...clamp2, fontWeight: 600 }}>{ticket.goal}</div>
                 {ticket.headline && (
-                  <div style={{ ...TYPE.body, ...clamp1, color: COLORS.muted, marginTop: 6 }}>{ticket.headline}</div>
+                  <div style={{ ...TYPE.body, ...clamp1, color: COLORS.muted, marginTop: 4 }}>{ticket.headline}</div>
                 )}
+                <div style={{ ...TYPE.meta, ...clamp1, color: COLORS.muted, marginTop: 4 }}>{projectName(ticket.cwd)}</div>
               </button>
             );
           })

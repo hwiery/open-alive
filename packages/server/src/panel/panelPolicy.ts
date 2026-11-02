@@ -12,22 +12,25 @@
  * behaviour every ticket had before the panels existed.
  */
 import { resolve, sep } from 'node:path';
+import { splitPathList } from '@open-alive/core';
 import type { Ticket } from '@open-alive/core';
 
 /** `OPEN_ALIVE_PANEL_EXCLUDE=/a:/b` → normalized absolute roots. */
 export function parsePanelExcludedRoots(env: NodeJS.ProcessEnv): string[] {
-  return (env.OPEN_ALIVE_PANEL_EXCLUDE ?? '')
-    .split(':')
-    .map((p) => p.trim())
-    .filter(Boolean)
-    .map((p) => resolve(p));
+  // `;`-separated on Windows, where every absolute path contains a `:`.
+  return splitPathList(env.OPEN_ALIVE_PANEL_EXCLUDE).map((p) => resolve(p));
 }
 
 /** True when `cwd` is one of the roots or sits inside one. */
 export function isUnderRoot(cwd: string, roots: readonly string[]): boolean {
   if (roots.length === 0) return false;
-  const target = resolve(cwd);
-  return roots.some((root) => target === root || target.startsWith(root.endsWith(sep) ? root : root + sep));
+  // Both sides resolved (separators normalized); Windows paths compare case-insensitively.
+  const norm = (p: string) => (process.platform === 'win32' ? resolve(p).toLowerCase() : resolve(p));
+  const target = norm(cwd);
+  return roots.some((raw) => {
+    const root = norm(raw);
+    return target === root || target.startsWith(root.endsWith(sep) ? root : root + sep);
+  });
 }
 
 /**

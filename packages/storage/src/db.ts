@@ -1,6 +1,6 @@
 /**
  * SQLite handle (spec §K.1). Uses better-sqlite3 — the same native driver the
- * Efficio prompt store already uses in this repo — so it runs on every Node
+ * prompt store already uses in this repo — so it runs on every Node
  * version the project supports (`engines: >=20`). Node's built-in `node:sqlite`
  * was avoided because it does not exist on Node 20 and is only unflagged from
  * Node 24, which breaks the CI matrix (Node 20/22).

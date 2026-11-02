@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { EvalLabel, WSClientMessage } from '@open-alive/core';
+import type { EvalLabel, UsageLimitsSnapshot, WSClientMessage } from '@open-alive/core';
 import type { RawMessageSubscribe } from '../App.tsx';
 import { useTickets } from '../views/tickets/useTickets.ts';
 import { MobileTicketList } from './MobileTicketList.tsx';
@@ -11,6 +11,9 @@ import { mergeProjects } from './mobileProjects.ts';
 import { MobileSessions } from './MobileSessions.tsx';
 import { parseCapabilities, type RemoteCapabilities } from './capabilities.ts';
 import { COLORS, chip } from './styles.ts';
+import { useVisualViewport } from './useVisualViewport.ts';
+import type { LiveSessions } from './sessionStatus.ts';
+import { UsageSummary } from '../components/UsageSummary.tsx';
 
 const API_BASE = `${window.location.protocol}//${window.location.hostname}:${window.location.port || '3141'}`;
 
@@ -18,6 +21,10 @@ export interface MobileAppProps {
   subscribeRaw: RawMessageSubscribe;
   connected: boolean;
   send: (msg: WSClientMessage) => void;
+  /** The PC's live sessions (its agent list); null while the socket is down. */
+  liveSessions?: LiveSessions;
+  /** Claude / Codex subscription usage, as the PC header shows it. */
+  usageLimits?: UsageLimitsSnapshot | null;
 }
 
 /**
@@ -28,7 +35,7 @@ export interface MobileAppProps {
  * the analytics have no place on a 390px screen and, for a remote device, the
  * server refuses most of them anyway.
  */
-export function MobileApp({ subscribeRaw, connected, send }: MobileAppProps) {
+export function MobileApp({ subscribeRaw, connected, send, liveSessions = null, usageLimits = null }: MobileAppProps) {
   const { t } = useTranslation();
   const { tickets, evaluations, refresh, createTicket, retryTicket, replyTicket, cancelTicket, deleteTicket, evaluateTicket } =
     useTickets(true, subscribeRaw);
@@ -37,6 +44,20 @@ export function MobileApp({ subscribeRaw, connected, send }: MobileAppProps) {
   const [allowed, setAllowed] = useState<MobileProject[]>([]);
   const [tab, setTab] = useState<'tickets' | 'sessions'>('tickets');
   const [caps, setCaps] = useState<RemoteCapabilities>({ terminal: 'off', remote: false });
+  const viewport = useVisualViewport();
+  // Reset countdowns are minute-grained; a minute tick keeps them honest.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  // Every screen sits in a box sized to the visible area, so the soft keyboard
+  // pushes an input bar up instead of covering it.
+  const shellStyle: CSSProperties = {
+    position: 'fixed', left: 0, right: 0, display: 'flex', flexDirection: 'column', background: COLORS.bg,
+    top: viewport?.offsetTop ?? 0,
+    height: viewport?.height ?? '100%',
+  };
 
   // Asked once: which controls this server will honour. A local-only server
   // answers 401/404 here and the sessions tab simply stays hidden.
@@ -74,6 +95,7 @@ export function MobileApp({ subscribeRaw, connected, send }: MobileAppProps) {
 
   if (open) {
     return (
+      <div style={shellStyle}>
       <MobileTicketDetail
         ticket={open}
         evaluation={evaluations[open.id] ?? null}
@@ -85,21 +107,25 @@ export function MobileApp({ subscribeRaw, connected, send }: MobileAppProps) {
         onEvaluate={(label: EvalLabel, weight: number) => { void evaluateTicket(open.id, { label, weight }); }}
         onRefresh={refresh}
       />
+      </div>
     );
   }
 
   if (screen === 'compose') {
     return (
+      <div style={shellStyle}>
       <MobileTicketCompose
         projects={projects}
         onCancel={() => setScreen('list')}
         onCreate={(draft) =>
           createTicket(
             draft.goal, draft.cwd, draft.location, draft.orchestrated,
-            draft.preset, draft.autoCommit, draft.panelReview,
+            undefined, draft.autoCommit, draft.panelReview,
+            { model: draft.model, effort: draft.effort },
           )
         }
       />
+      </div>
     );
   }
 
@@ -114,7 +140,7 @@ export function MobileApp({ subscribeRaw, connected, send }: MobileAppProps) {
 
   const body =
     tab === 'sessions' && sessionsAvailable ? (
-      <MobileSessions subscribeRaw={subscribeRaw} send={send} terminalLevel={caps.terminal} projects={projects} />
+      <MobileSessions subscribeRaw={subscribeRaw} send={send} terminalLevel={caps.terminal} projects={projects} live={liveSessions} />
     ) : (
       <MobileTicketList
         tickets={tickets}
@@ -127,7 +153,7 @@ export function MobileApp({ subscribeRaw, connected, send }: MobileAppProps) {
     );
 
   return (
-    <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', background: COLORS.bg }}>
+    <div style={shellStyle}>
       {/* One bar carries both the product mark and the top-level switch, so a
           phone spends no vertical space on a header that only says the name. */}
       <div
@@ -172,6 +198,12 @@ export function MobileApp({ subscribeRaw, connected, send }: MobileAppProps) {
           })}
         </div>
       </div>
+      {/* Tickets tab only: an open terminal needs every row, more so with the keyboard up. */}
+      {usageLimits && tab === 'tickets' && (
+        <div style={{ flexShrink: 0, padding: '6px 12px', borderBottom: `1px solid ${COLORS.border}` }}>
+          <UsageSummary usage={usageLimits} now={now} layout="stacked" />
+        </div>
+      )}
       <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>{body}</div>
     </div>
   );

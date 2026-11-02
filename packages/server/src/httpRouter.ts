@@ -3,7 +3,9 @@ import { readdir } from 'node:fs/promises';
 import { isAbsolute, resolve as pathResolve } from 'node:path';
 import { homedir } from 'node:os';
 import { z } from 'zod';
-import { TICKET_RUN_PRESET_IDS } from '@open-alive/core';
+import type { AccessSettings } from './accessSettings.js';
+import { MobileSettingsError, type MobileSettings } from './mobileSettings.js';
+import { TICKET_RUN_PRESET_IDS, TICKET_EFFORT_LEVELS, isTicketModelChoice, isCodexModelId } from '@open-alive/core';
 import type { HookEventPayload, HookEventData, HookEventName } from '@open-alive/core';
 import { createStaticHandler } from './staticFiles.js';
 import { handleRunRequest } from './runRoutes.js';
@@ -16,8 +18,8 @@ import {
   type RemoteAccessConfig,
 } from './remoteAccess.js';
 import { isCrossSiteRequest } from './httpOrigin.js';
-import type { EfficioReader } from './efficioReader.js';
 import { readServerVersion } from './serverVersion.js';
+import { resolveLocalModel } from './localModel.js';
 import { GatewaySettingsValidationError, type GatewaySettings } from './gatewaySettings.js';
 
 const SERVER_VERSION = readServerVersion();
@@ -109,12 +111,6 @@ export interface HttpRouterOptions {
   /** Path to the UI dist directory. Defaults to ../../ui/dist relative to server dist. */
   uiDistPath?: string;
   /**
-   * Optional read-only bridge to the efficio SQLite store. When present,
-   * `/api/efficio/*` routes serve pre-computed efficiency scores. Absent or
-   * data-less → routes return `available:false` so the UI can guide `collect`.
-   */
-  efficio?: EfficioReader;
-  /**
    * Optional sub-router for paths owned by the absorbed open-alive-prompt
    * subsystem (`/api/prompts*`, `/api/sessions*`, `/v1/ingest/*`). When
    * present, requests matching those prefixes are delegated to it before
@@ -185,6 +181,14 @@ export interface HttpRouterOptions {
     listEvaluations?: () => unknown[];
   };
 
+  /** Tier → model id map the ticket presets resolve against (claudeModels.ts). */
+  claudeModels?: () => unknown;
+  /** Codex models a ticket may run on (codexModels.ts). Absent → codex models are refused. */
+  codexModels?: {
+    list: () => unknown;
+    has: (id: string) => boolean;
+  };
+
   /**
    * Orchestration backend registry (spec 2026-07-22). Absent when disabled.
    * Powers the onboarding surface: list connectable backends + live check.
@@ -200,6 +204,12 @@ export interface HttpRouterOptions {
    * only: it writes the API key to disk.
    */
   gatewaySettings?: GatewaySettings;
+
+  /** "Require a token on this computer" (remote mode only). Local / full-access callers only. */
+  accessSettings?: AccessSettings;
+
+  /** Settings → Mobile (remote access, device tokens, Tailscale). Local / full-access callers only. */
+  mobileSettings?: MobileSettings;
 
   /**
    * Local git branch operations for the ticket composer. Absent when the git
@@ -293,6 +303,23 @@ const TicketCreateBodySchema = z.object({
   // Closed enum, never free-form model/effort strings: the values become CLI
   // argv, so the allowlist lives at the boundary rather than downstream.
   preset: z.enum(TICKET_RUN_PRESET_IDS).optional(),
+  // A directly chosen model/effort, still closed: a tier alias or a Claude id
+  // matching a strict pattern (isTicketModelChoice), and the effort enum.
+  model: z
+    .string()
+    .refine((v) => isTicketModelChoice(v) || isCodexModelId(v), 'model must be a Claude or Codex model id')
+    .optional(),
+  effort: z.enum(TICKET_EFFORT_LEVELS).optional(),
+});
+
+const AccessSettingsBodySchema = z.object({ requireTokenLocally: z.boolean() });
+
+const MobileTokenBodySchema = z.object({ label: z.string().max(40) });
+const MobileUpdateBodySchema = z.object({
+  remoteEnabled: z.boolean().optional(),
+  bind: z.enum(['all', 'tailscale', 'local']).optional(),
+  ticketRoots: z.array(z.string().max(1024)).max(20).optional(),
+  terminalLevel: z.enum(['off', 'watch', 'input', 'shell']).optional(),
 });
 
 const EvaluateBodySchema = z.object({
@@ -404,11 +431,14 @@ export function createHttpServer(options: HttpRouterOptions) {
     workspaceTree,
     sessionConversation,
     sessionTerminal,
-    efficio,
     runs,
     tickets,
     backends,
+    claudeModels,
+    codexModels,
     gatewaySettings,
+    accessSettings,
+    mobileSettings,
     git,
     sshBrowse,
     remoteAccess,
@@ -620,6 +650,19 @@ export function createHttpServer(options: HttpRouterOptions) {
           sendJson(res, 400, { error: '요청 형식 오류: goal 과 cwd 가 필요합니다' }, req);
           return;
         }
+        // A non-Claude model means the Codex engine: it must be in the local
+        // Codex catalogue, and Codex runs on this machine only.
+        const model = parsed.data.model;
+        if (model && !isTicketModelChoice(model)) {
+          if (!codexModels?.has(model)) {
+            sendJson(res, 400, { error: `Codex 모델을 찾을 수 없습니다: ${model}` }, req);
+            return;
+          }
+          if (parsed.data.location?.kind === 'ssh') {
+            sendJson(res, 400, { error: 'Codex 티켓은 이 컴퓨터에서만 실행할 수 있습니다' }, req);
+            return;
+          }
+        }
         const cwdError = tickets.validateCwd?.(parsed.data.cwd, parsed.data.location?.kind === 'ssh');
         if (cwdError) {
           sendJson(res, 400, { error: cwdError }, req);
@@ -736,6 +779,94 @@ export function createHttpServer(options: HttpRouterOptions) {
       return;
     }
 
+    // ── Mobile connection settings ───────────────────────────────────────────
+    // Turns remote access on and mints device tokens: nothing a device token
+    // itself may touch.
+    if (mobileSettings && url.pathname.startsWith('/api/settings/mobile')) {
+      if (!sensitiveAllowed || remoteCaller) {
+        sendJson(res, 403, { error: 'Mobile settings are restricted to local callers' }, req);
+        return;
+      }
+      const tokenMatch = url.pathname.match(/^\/api\/settings\/mobile\/tokens\/([^/]+)$/);
+      try {
+        if (req.method === 'GET' && url.pathname === '/api/settings/mobile') {
+          sendJson(res, 200, await mobileSettings.get(), req);
+          return;
+        }
+        if (req.method === 'POST' && url.pathname === '/api/settings/mobile/restart') {
+          const ok = mobileSettings.restart();
+          sendJson(res, ok ? 202 : 409, ok ? { restarting: true } : { error: 'Restart from the dashboard needs autostart (launchd). Run: open-alive stop && open-alive start' }, req);
+          return;
+        }
+        if (req.method === 'DELETE' && tokenMatch) {
+          mobileSettings.revokeToken(decodeURIComponent(tokenMatch[1]!));
+          sendJson(res, 200, await mobileSettings.get(), req);
+          return;
+        }
+        if (req.method === 'POST' && (url.pathname === '/api/settings/mobile' || url.pathname === '/api/settings/mobile/tokens')) {
+          let raw: unknown;
+          try {
+            raw = JSON.parse(await readBody(req, res));
+          } catch {
+            if (!res.headersSent) sendJson(res, 400, { error: 'Invalid JSON' }, req);
+            return;
+          }
+          if (url.pathname === '/api/settings/mobile/tokens') {
+            const parsed = MobileTokenBodySchema.safeParse(raw);
+            if (!parsed.success) {
+              sendJson(res, 400, { error: 'Invalid body: label (string) is required' }, req);
+              return;
+            }
+            sendJson(res, 201, mobileSettings.createToken(parsed.data.label), req);
+            return;
+          }
+          const parsed = MobileUpdateBodySchema.safeParse(raw);
+          if (!parsed.success) {
+            sendJson(res, 400, { error: 'Invalid body' }, req);
+            return;
+          }
+          sendJson(res, 200, await mobileSettings.update(parsed.data), req);
+          return;
+        }
+      } catch (error) {
+        if (error instanceof MobileSettingsError) {
+          sendJson(res, 400, { error: error.message }, req);
+          return;
+        }
+        throw error;
+      }
+    }
+
+    // ── Access settings ──────────────────────────────────────────────────────
+    // Decides whether this computer needs a token in remote mode — exactly the
+    // kind of switch a remote device must never flip.
+    if (accessSettings && url.pathname === '/api/settings/access') {
+      if (!sensitiveAllowed || remoteCaller) {
+        sendJson(res, 403, { error: 'Access settings are restricted to local callers' }, req);
+        return;
+      }
+      if (req.method === 'GET') {
+        sendJson(res, 200, accessSettings.get(), req);
+        return;
+      }
+      if (req.method === 'POST') {
+        let raw: unknown;
+        try {
+          raw = JSON.parse(await readBody(req, res));
+        } catch {
+          if (!res.headersSent) sendJson(res, 400, { error: 'Invalid JSON' }, req);
+          return;
+        }
+        const parsed = AccessSettingsBodySchema.safeParse(raw);
+        if (!parsed.success) {
+          sendJson(res, 400, { error: 'Invalid body: requireTokenLocally (boolean) is required' }, req);
+          return;
+        }
+        sendJson(res, 200, accessSettings.setRequireTokenLocally(parsed.data.requireTokenLocally), req);
+        return;
+      }
+    }
+
     // ── LLM gateway settings ─────────────────────────────────────────────────
     // Writes LITELLM_BASE_URL / LITELLM_KEY to ~/.open-alive/.env, so no
     // scoped remote token may reach it. The key itself is never returned.
@@ -786,6 +917,21 @@ export function createHttpServer(options: HttpRouterOptions) {
     }
 
     // Orchestration backends (loopback-only): list + live connectivity check.
+    // Model ids only (no paths, no secrets) — remote devices compose tickets too.
+    if (claudeModels && req.method === 'GET' && url.pathname === '/api/claude/models') {
+      sendJson(res, 200, claudeModels(), req);
+      return;
+    }
+    // Launch presets for a new terminal tab: the local model Codex can run on
+    // (`OA_LOCAL_MODEL`), or null. Model name and provider only.
+    if (req.method === 'GET' && url.pathname === '/api/terminal/launch-options') {
+      sendJson(res, 200, { localModel: resolveLocalModel(process.env) }, req);
+      return;
+    }
+    if (req.method === 'GET' && url.pathname === '/api/codex/models') {
+      sendJson(res, 200, codexModels ? codexModels.list() : { models: [] }, req);
+      return;
+    }
     if (backends && req.method === 'GET' && url.pathname === '/api/backends') {
       if (!sensitiveAllowed) {
         sendJson(res, 403, { error: 'Backends API is restricted to loopback' }, req);
@@ -972,37 +1118,6 @@ export function createHttpServer(options: HttpRouterOptions) {
       return;
     }
 
-    // GET /api/efficio/status — data availability + active reference model meta
-    if (req.method === 'GET' && url.pathname === '/api/efficio/status') {
-      const status = efficio
-        ? efficio.status()
-        : { available: false, sessionCount: 0, modelVersion: null, modelN: null, lastScoredAt: null };
-      sendJson(res, 200, status, req);
-      return;
-    }
-
-    // GET /api/efficio/timeline?axis=w2&last=20 — size-adjusted waste residual series
-    if (req.method === 'GET' && url.pathname === '/api/efficio/timeline') {
-      const axis = url.searchParams.get('axis') ?? 'w2';
-      const last = parseInt(url.searchParams.get('last') ?? '20', 10);
-      const timeline = efficio ? efficio.timeline(axis, last) : { axis: 'w2', rows: [] };
-      sendJson(res, 200, timeline, req);
-      return;
-    }
-
-    // GET /api/efficio/profiles?last=60 or ?session_id=... — full dashboard or exact historical session.
-    if (req.method === 'GET' && url.pathname === '/api/efficio/profiles') {
-      const last = parseInt(url.searchParams.get('last') ?? '60', 10);
-      const sessionId = url.searchParams.get('session_id');
-      const profiles = efficio
-        ? sessionId === null
-          ? efficio.profiles(last)
-          : efficio.profile(sessionId)
-        : { modelVersion: null, sessions: [] };
-      sendJson(res, 200, profiles, req);
-      return;
-    }
-
     // ── Remote app surface ──────────────────────────────────────────────────
     // The narrow, allowlist-shaped replacement for /api/fs/browse: it answers
     // "which directories may a ticket run in", never "what is on this disk".
@@ -1016,7 +1131,10 @@ export function createHttpServer(options: HttpRouterOptions) {
     }
 
     if (req.method === 'GET' && url.pathname === '/api/remote/capabilities') {
-      sendJson(res, 200, { terminal: accessPolicy.terminalLevel, remote: accessPolicy.enabled }, req);
+      // The level gates device tokens only. A full-access caller's socket is not
+      // marked remote, so it may already send every terminal:* message.
+      const terminal = remoteCaller ? accessPolicy.terminalLevel : 'shell';
+      sendJson(res, 200, { terminal, remote: accessPolicy.enabled }, req);
       return;
     }
 

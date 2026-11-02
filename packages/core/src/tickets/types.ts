@@ -10,6 +10,9 @@ import type { TicketLocation } from './location.js';
 import type { TicketDelegation } from './orchestration.js';
 import type { TicketEffort, TicketRunPreset } from './runProfile.js';
 
+/** Agent CLI a ticket runs on. */
+export type TicketEngine = 'claude' | 'codex';
+
 /**
  * Internal lifecycle state. `queued`+`running`+`verifying` collapse to a single
  * "in progress" column. `decision` means the agent asked the human to choose and
@@ -305,8 +308,13 @@ export interface Ticket {
    * stopped-from-outside run never reads as a crash.
    */
   agentExit?: TicketAgentExit;
-  /** Underlying Claude session id, for optional deep-dive. UI hides it by default. */
+  /**
+   * Underlying agent session id, for resume and optional deep-dive. A Claude
+   * session id, or the Codex thread id when `engine === 'codex'`.
+   */
   claudeSessionId?: string;
+  /** Agent CLI that runs this ticket. Absent = Claude Code (every ticket before Codex). */
+  engine?: TicketEngine;
   error?: string;
   /** The pending question when `state === 'decision'`, parsed from `DECISION:`. */
   decisionQuestion?: string;
@@ -347,6 +355,13 @@ export interface TicketCreateInput {
   orchestrated?: boolean;
   /** Run preset. Omitted = the CLI's own defaults (matches pre-feature behaviour). */
   preset?: TicketRunPreset;
+  /**
+   * Model picked directly: a Claude tier alias / full id, or a Codex model id
+   * (then the ticket runs on Codex). Wins over the preset's model.
+   */
+  model?: string;
+  /** Effort picked directly. Wins over the preset's effort. */
+  effort?: TicketEffort;
   /** Opt out of the post-verification auto-commit. Omitted = enabled. */
   autoCommit?: boolean;
   /** Opt out of the external review panels (nothing leaves the machine). Omitted = enabled. */

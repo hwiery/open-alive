@@ -12,19 +12,29 @@ describe('viewGroups', () => {
     expect(primary.map((m) => m.mode)).toEqual(['tickets']);
   });
 
-  it('groups live observation views under monitor, in order', () => {
-    expect(viewsInGroup('monitor').map((m) => m.mode)).toEqual([
-      'animation',
-      'list',
-      'spread',
+  it('groups the three terminal layouts — window, split, full — in that order', () => {
+    expect(viewsInGroup('terminal').map((m) => [m.mode, m.labelKey])).toEqual([
+      ['animation', 'viewMode.layout.window'],
+      ['spread', 'viewMode.layout.split'],
+      ['list', 'viewMode.layout.full'],
     ]);
   });
 
-  it('groups analysis/productivity views under tools, board first', () => {
-    expect(viewsInGroup('tools').map((m) => m.mode)).toEqual([
-      'board',
-      'workspace',
-    ]);
+  it('tells terminal layouts apart from tickets and cost', async () => {
+    const { isTerminalView } = await import('../components/viewGroups.ts');
+    expect(['animation', 'spread', 'list'].every((m) => isTerminalView(m as never))).toBe(true);
+    expect(isTerminalView('tickets')).toBe(false);
+    expect(isTerminalView('board')).toBe(false);
+  });
+
+  it('keeps only Cost (internal id board) under tools — workspace is gone', () => {
+    expect(viewsInGroup('tools').map((m) => [m.mode, m.labelKey])).toEqual([['board', 'viewMode.cost']]);
+  });
+
+  it('sends a saved workspace view to tickets', async () => {
+    const { normalizeViewMode } = await import('../components/viewGroups.ts');
+    expect(normalizeViewMode('workspace')).toBe('tickets');
+    expect(normalizeViewMode('data')).toBe('board');
   });
 
   it('assigns every surfaced view to exactly one group (no gaps, no dupes)', () => {
@@ -45,7 +55,7 @@ describe('viewGroups', () => {
     }
   });
 
-  it.each(['prompt', 'efficio', 'archive', 'ticketMgmt', 'data'] as const)(
+  it.each(['prompt', 'archive', 'ticketMgmt', 'data'] as const)(
     'normalizes legacy %s navigation to board',
     (mode) => {
       expect(normalizeViewMode(mode)).toBe('board');

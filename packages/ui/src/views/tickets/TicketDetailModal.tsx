@@ -7,6 +7,7 @@ import type {
 import { AgentExitReport } from './AgentExitReport.tsx';
 import { legacyAgentExit } from './legacyAgentExit.ts';
 import { Markdown } from './Markdown.tsx';
+import { ModelBadge } from '../../components/ModelBadge.tsx';
 import {
   projectName,
   formatStarted,
@@ -81,8 +82,8 @@ export function TicketDetailModal({ ticket, evaluation, onClose, onRetry, onCanc
   const meta: string[] = [formatStarted(ticket)];
   // Prefer the exact version the run actually reported; fall back to the
   // requested id while the ticket is still queued and nothing has come back yet.
-  if (ticket.model) meta.push(ticket.model);
-  else if (ticket.requestedModel) meta.push(ticket.requestedModel);
+  // Rendered as a logo badge in the header, so it is not repeated in `meta`.
+  const headerModel = ticket.model ?? ticket.requestedModel;
   if (ticket.thinking) meta.push('thinking');
   if (ticket.effort) meta.push(`effort:${ticket.effort}`);
 
@@ -117,8 +118,9 @@ export function TicketDetailModal({ ticket, evaluation, onClose, onRetry, onCanc
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 20px', borderBottom: '1px solid var(--border-default, #30363d)', flexShrink: 0 }}>
           <span style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 13, opacity: 0.6 }}>#{ticket.seq}</span>
           <span style={badgeStyle}>{projectName(ticket.cwd)}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 12, fontFamily: 'var(--font-mono, monospace)', opacity: 0.6 }}>
-            {meta.join(' · ')}
+          <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12, minWidth: 0 }}>
+            {headerModel && <ModelBadge model={headerModel} raw size={13} />}
+            <span style={{ fontFamily: 'var(--font-mono, monospace)', opacity: 0.6 }}>{meta.join(' · ')}</span>
           </span>
           <button
             type="button"
@@ -447,7 +449,7 @@ function Delegations({ delegations }: { delegations: TicketDelegation[] }) {
                 {d.requestedModel && (
                   <span style={{ color: 'var(--text-secondary, #8b949e)' }}>{d.requestedModel} → </span>
                 )}
-                {d.model}
+                <ModelBadge model={d.model} raw size={12} />
               </span>
               {meta && (
                 <span style={{ fontSize: 11, fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-secondary, #8b949e)' }}>
@@ -745,7 +747,7 @@ const btnStyle: React.CSSProperties = {
 };
 
 /** Small key→value row used by both review reports. */
-function ReportRow({ label, children }: { label: string; children: ReactNode }) {
+function ReportRow({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <div style={{ display: 'flex', gap: 10, fontSize: 12, lineHeight: 1.6 }}>
       <span style={{ minWidth: 92, flexShrink: 0, color: 'var(--text-secondary, #8b949e)' }}>{label}</span>
@@ -838,7 +840,7 @@ function VerificationReport({ ticket, t }: { ticket: Ticket; t: (key: string) =>
       )}
 
       {voters.map((o) => (
-        <ReportRow key={o.model} label={shortModel(o.respondedModel ?? o.model)}>
+        <ReportRow key={o.model} label={<ModelBadge model={shortModel(o.respondedModel ?? o.model)} raw size={12} />}>
           <span style={{ color: o.passed ? 'var(--accent-green, #3fb950)' : 'var(--accent-red, #f85149)' }}>
             {o.passed ? '✓' : '✗'}
           </span>{' '}
@@ -927,7 +929,7 @@ function AdvisoryReport({ panel, t }: { panel: TicketDecisionPanel; t: (key: str
       {panel.tiebreak && (
         <ReportRow label={t('tickets.tiebreakLabel')}>
           <span style={{ fontFamily: 'var(--font-mono, monospace)', opacity: 0.7, marginRight: 6 }}>
-            {shortModel(panel.tiebreak.model)}
+            <ModelBadge model={shortModel(panel.tiebreak.model)} raw size={12} />
           </span>
           {panel.tiebreak.why}
         </ReportRow>
@@ -935,7 +937,7 @@ function AdvisoryReport({ panel, t }: { panel: TicketDecisionPanel; t: (key: str
       {panel.reason && <ReportRow label={t('tickets.escalationLabel')}>{panel.reason}</ReportRow>}
 
       {answered.map((o) => (
-        <ReportRow key={o.model} label={shortModel(o.respondedModel ?? o.model)}>
+        <ReportRow key={o.model} label={<ModelBadge model={shortModel(o.respondedModel ?? o.model)} raw size={12} />}>
           {o.choice && <strong style={{ marginRight: 4 }}>{o.choice})</strong>}
           {o.recommendation}
           {typeof o.confidence === 'number' && (

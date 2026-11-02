@@ -2,10 +2,12 @@
  * Pick the Executor for a ticket's location: local child process, or SSH to a
  * remote host. Absent location = local (backward-compatible).
  */
-import type { TicketLocation } from '@open-alive/core';
+import type { TicketEngine, TicketLocation } from '@open-alive/core';
 import type { FlagSupportCache } from '../agentFlags.js';
 import { createLocalExecutor } from './localExecutor.js';
 import { createSshExecutor } from './sshExecutor.js';
+import { createCodexExecutor } from './codexExecutor.js';
+import type { CodexModel } from '../codexModels.js';
 import type { Executor } from './types.js';
 
 export interface ResolveExecutorDeps {
@@ -18,9 +20,20 @@ export interface ResolveExecutorDeps {
    * safe across locations.
    */
   flagCache?: FlagSupportCache;
+  /** Codex catalogue lookup; required to run a ticket whose engine is codex. */
+  findCodexModel?: (id: string) => CodexModel | undefined;
 }
 
-export function resolveExecutor(location: TicketLocation | undefined, deps: ResolveExecutorDeps = {}): Executor {
+export function resolveExecutor(
+  location: TicketLocation | undefined,
+  deps: ResolveExecutorDeps = {},
+  engine: TicketEngine = 'claude',
+): Executor {
+  // Codex runs locally only; the create route refuses codex + ssh.
+  if (engine === 'codex') {
+    const base = createLocalExecutor({ allowedRoots: deps.localAllowedRoots });
+    return createCodexExecutor({ base, findModel: deps.findCodexModel ?? (() => undefined) });
+  }
   if (location?.kind === 'ssh' && location.ssh) {
     return createSshExecutor(location.ssh, { ...(deps.flagCache ? { flagCache: deps.flagCache } : {}) });
   }

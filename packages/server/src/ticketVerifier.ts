@@ -169,8 +169,10 @@ export function createVerifier(options: VerifierOptions = {}): Verifier {
           // The gate inherits the ticket's run profile. A verifier weaker than the
           // agent it judges would quietly hollow out the completion gate, so a
           // `deep` ticket is verified deeply and a `fast` one cheaply.
+          // A Codex ticket is verified by Claude (the gate always runs on Claude
+          // Code): keep its effort, let the CLI pick the Claude model.
           flags: {
-            ...(ticket.requestedModel ? { model: ticket.requestedModel } : {}),
+            ...(ticket.requestedModel && ticket.engine !== 'codex' ? { model: ticket.requestedModel } : {}),
             ...(ticket.effort ? { effort: ticket.effort } : {}),
           },
         });

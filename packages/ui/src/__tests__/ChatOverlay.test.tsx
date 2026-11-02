@@ -1,5 +1,7 @@
+import { TERMINAL_SET_MODE_EVENT } from '../state/terminalViewSwitch.ts';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { act } from 'react';
 import { ChatOverlay } from '../views/chat/ChatOverlay.js';
 
 // Mock i18next
@@ -14,7 +16,6 @@ vi.mock('react-i18next', () => ({
         'terminal.modeBottom': 'Bottom',
         'terminal.modeRight': 'Right',
         'terminal.modeFullscreen': 'Fullscreen',
-        'terminal.modeFullscreenDisabled': 'Fullscreen unavailable',
         'terminal.collapse': 'Minimize',
       };
       if (key === 'terminal.tabLabel' && opts?.n != null) return `Terminal ${opts.n}`;
@@ -27,6 +28,11 @@ vi.mock('react-i18next', () => ({
 vi.mock('@xterm/xterm', () => {
   return {
     Terminal: class {
+      options: Record<string, unknown>;
+      constructor(opts: Record<string, unknown> = {}) {
+        this.options = { ...opts };
+        ((globalThis as Record<string, unknown>).__xtermInstances as unknown[] | undefined)?.push(this);
+      }
       open = vi.fn();
       write = vi.fn();
       dispose = vi.fn();
@@ -54,6 +60,7 @@ describe('ChatOverlay', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    globalThis.localStorage?.removeItem?.('open-alive:launch-profile');
   });
 
   it('renders nothing when closed', () => {
@@ -91,20 +98,77 @@ describe('ChatOverlay', () => {
 
   it('shows the unified launch bar on the Local tab', () => {
     render(<ChatOverlay open={true} onToggle={() => {}} />);
-    // Command entrypoint toggle: claude vs claude agents
-    expect(screen.getByText('claude')).toBeDefined();
-    expect(screen.getByText('claude agents')).toBeDefined();
-    // Skip-permissions + primary start CTA live in the same bar
-    expect(screen.getByText('terminal.skipPermissions')).toBeDefined();
+    // Launch presets (agent × skip-permissions) + primary start CTA live in the same bar
+    for (const id of ['claude', 'claude-skip', 'codex', 'codex-skip']) {
+      expect(screen.getByText(`terminal.launch.${id}`)).toBeDefined();
+    }
     expect(screen.getByText(/terminal\.startHere/)).toBeDefined();
   });
 
-  it('lets the user switch the Claude entrypoint to "claude agents"', () => {
+  it('shows quick select, recent folders and browse side by side', () => {
     render(<ChatOverlay open={true} onToggle={() => {}} />);
-    const agentsBtn = screen.getByText('claude agents');
-    fireEvent.click(agentsBtn);
-    // Still present after selection (state updated without crashing)
-    expect(screen.getByText('claude agents')).toBeDefined();
+    expect(screen.getByText('terminal.quickSelect')).toBeDefined();
+    expect(screen.getByText('terminal.menu.recentFolders')).toBeDefined();
+    expect(screen.getByText('terminal.browseSection')).toBeDefined();
+  });
+
+  it('starts codex with the bypass flag when that preset is chosen', async () => {
+    const onSpawn = vi.fn();
+    render(<ChatOverlay open={true} onToggle={() => {}} onSpawn={onSpawn} />);
+    fireEvent.click(screen.getByText('terminal.launch.codex-skip'));
+    fireEvent.click(screen.getByText(/terminal\.startHere/));
+    await vi.waitFor(() => expect(onSpawn).toHaveBeenCalled());
+    const req = onSpawn.mock.calls[0]![0] as Record<string, unknown>;
+    expect(req.mode).toBe('codex');
+    expect(req.skipPermissions).toBe(true);
+    expect(req.claudeSessionId).toBeUndefined();
+  });
+
+  it('hides the local-model presets when the server has no local model', () => {
+    render(<ChatOverlay open={true} onToggle={() => {}} />);
+    expect(screen.queryByText('terminal.launch.codex-local')).toBeNull();
+  });
+
+  it('starts codex on the local model when the server offers one', async () => {
+    // Only the launch-options endpoint answers; every other request fails as it
+    // does without a server.
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (!String(url).endsWith('/api/terminal/launch-options')) throw new Error('offline');
+      return { ok: true, json: async () => ({ localModel: { model: 'gemma4:12b-it-qat', provider: 'ollama' } }) };
+    }));
+    try {
+      const onSpawn = vi.fn();
+      render(<ChatOverlay open={true} onToggle={() => {}} onSpawn={onSpawn} />);
+      fireEvent.click(await screen.findByText('terminal.launch.codex-local-skip'));
+      fireEvent.click(screen.getByText(/terminal\.startHere/));
+      await vi.waitFor(() => expect(onSpawn).toHaveBeenCalled());
+      const req = onSpawn.mock.calls[0]![0] as Record<string, unknown>;
+      expect(req).toMatchObject({ mode: 'codex', localModel: true, skipPermissions: true });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('starts claude without skipping permissions when that preset is chosen', async () => {
+    const onSpawn = vi.fn();
+    render(<ChatOverlay open={true} onToggle={() => {}} onSpawn={onSpawn} />);
+    fireEvent.click(screen.getByText('terminal.launch.claude'));
+    fireEvent.click(screen.getByText(/terminal\.startHere/));
+    await vi.waitFor(() => expect(onSpawn).toHaveBeenCalled());
+    const req = onSpawn.mock.calls[0]![0] as Record<string, unknown>;
+    expect(req.mode).toBe('claude');
+    expect(req.skipPermissions).toBe(false);
+  });
+
+  it('offers no `claude agents` entrypoint and never sends a variant on spawn', async () => {
+    const onSpawn = vi.fn();
+    render(<ChatOverlay open={true} onToggle={() => {}} onSpawn={onSpawn} />);
+    expect(screen.queryByText('claude agents')).toBeNull();
+    fireEvent.click(screen.getByText(/terminal\.startHere/));
+    await vi.waitFor(() => expect(onSpawn).toHaveBeenCalled());
+    const req = onSpawn.mock.calls[0]![0] as Record<string, unknown>;
+    expect(req.mode).toBe('claude');
+    expect('claudeVariant' in req).toBe(false);
   });
 
   it('hides the launch bar on the SSH tab (presets launch on click)', () => {
@@ -112,45 +176,84 @@ describe('ChatOverlay', () => {
     fireEvent.click(screen.getByText('terminal.tabSsh'));
     expect(screen.getByText('terminal.menu.manageSsh')).toBeDefined();
     expect(screen.queryByText(/terminal\.startHere/)).toBeNull();
-    expect(screen.queryByText('terminal.skipPermissions')).toBeNull();
+    expect(screen.queryByText('terminal.launch.claude-skip')).toBeNull();
   });
 
-  it('demotes fullscreen to popup and disables the fullscreen button when a content view opens', () => {
-    const { rerender } = render(<ChatOverlay open={true} onToggle={() => {}} />);
-    // User switches the terminal to fullscreen.
-    fireEvent.click(screen.getByTitle('Fullscreen'));
-    // A content view (Prompt/Efficio) becomes active — fullscreen would cover it.
-    rerender(<ChatOverlay open={true} onToggle={() => {}} contentViewActive={true} />);
-    // Fullscreen button is disabled (its title switches to the disabled hint).
-    const fsBtn = screen.getByTitle('Fullscreen unavailable') as HTMLButtonElement;
-    expect(fsBtn.disabled).toBe(true);
-    // Mode was demoted to popup → the popup button is now the active one.
-    const popupBtn = screen.getByTitle('Popup') as HTMLButtonElement;
-    expect(popupBtn.style.opacity).toBe('1');
+  it('takes its position from the header and reports it back', () => {
+    const onModeChange = vi.fn();
+    render(<ChatOverlay open={true} onToggle={() => {}} onModeChange={onModeChange} />);
+    // First run: docked below, the tickets-over-terminal layout.
+    expect(onModeChange).toHaveBeenLastCalledWith('bottom');
+    act(() => {
+      window.dispatchEvent(new CustomEvent(TERMINAL_SET_MODE_EVENT, { detail: 'popup' }));
+    });
+    expect(onModeChange).toHaveBeenLastCalledWith('popup');
+    // Fullscreen is the Terminal › Full view, not something the header asks the panel for.
+    act(() => {
+      window.dispatchEvent(new CustomEvent(TERMINAL_SET_MODE_EVENT, { detail: 'fullscreen' }));
+    });
+    expect(onModeChange).toHaveBeenLastCalledWith('popup');
   });
 
-  it('restores the prior fullscreen mode when leaving the content view', () => {
-    const { rerender } = render(<ChatOverlay open={true} onToggle={() => {}} />);
-    fireEvent.click(screen.getByTitle('Fullscreen'));
-    // Enter a content view (demotes to popup) ...
-    rerender(<ChatOverlay open={true} onToggle={() => {}} contentViewActive={true} />);
-    // ... then return to Animation/List (contentViewActive false).
-    rerender(<ChatOverlay open={true} onToggle={() => {}} contentViewActive={false} />);
-    const fsBtn = screen.getByTitle('Fullscreen') as HTMLButtonElement;
-    expect(fsBtn.disabled).toBe(false);
-    // Fullscreen is the active mode again.
-    expect(fsBtn.style.opacity).toBe('1');
+  it('remembers the panel position and docked size across reloads', () => {
+    const store = new Map<string, string>([
+      ['open-alive:terminal-mode', 'right'],
+      ['open-alive:terminal-right-width', '420'],
+    ]);
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    });
+    try {
+      const onModeChange = vi.fn();
+      const onDockSizeChange = vi.fn();
+      render(<ChatOverlay open={true} onToggle={() => {}} onModeChange={onModeChange} onDockSizeChange={onDockSizeChange} />);
+      expect(onModeChange).toHaveBeenLastCalledWith('right');
+      expect(onDockSizeChange).toHaveBeenLastCalledWith({ bottomHeight: undefined, rightWidth: 420 });
+      expect(screen.getByTestId('terminal-title-bar').parentElement!.style.width).toBe('420px');
+      act(() => {
+        window.dispatchEvent(new CustomEvent(TERMINAL_SET_MODE_EVENT, { detail: 'bottom' }));
+      });
+      expect(store.get('open-alive:terminal-mode')).toBe('bottom');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
-  it('leaves the mode untouched when entering a content view without fullscreen', () => {
-    const { rerender } = render(<ChatOverlay open={true} onToggle={() => {}} />);
-    // Default mode is popup (not fullscreen).
-    rerender(<ChatOverlay open={true} onToggle={() => {}} contentViewActive={true} />);
-    // Popup stays active; nothing was demoted or stashed for restore.
-    const popupBtn = screen.getByTitle('Popup') as HTMLButtonElement;
-    expect(popupBtn.style.opacity).toBe('1');
-    rerender(<ChatOverlay open={true} onToggle={() => {}} contentViewActive={false} />);
-    expect((screen.getByTitle('Popup') as HTMLButtonElement).style.opacity).toBe('1');
+  it('slides the popup window left/right by its title bar, within the screen, and remembers it', async () => {
+    const store = new Map<string, string>([['open-alive:terminal-mode', 'popup']]);
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    });
+    try {
+      render(<ChatOverlay open={true} onToggle={() => {}} />);
+      const bar = screen.getByTestId('terminal-title-bar');
+      const panel = bar.parentElement!;
+      vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue({ width: 640 } as DOMRect);
+      fireEvent.pointerDown(bar, { clientX: 500, pointerId: 1 });
+      fireEvent.pointerMove(bar, { clientX: 380, pointerId: 1 });
+      fireEvent.pointerUp(bar, { clientX: 380, pointerId: 1 });
+      expect(panel.style.transform).toBe('translateX(calc(-50% + -120px))');
+      expect(store.get('open-alive:terminal-popup-offset-x')).toBe('-120');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps the popup on screen however far it is dragged', async () => {
+    const { clampPopupOffset } = await import('../views/chat/ChatOverlay.js');
+    expect(clampPopupOffset(-5000, 1280, 640)).toBe(-312);
+    expect(clampPopupOffset(5000, 1280, 640)).toBe(312);
+    expect(clampPopupOffset(40, 600, 640)).toBe(0);
+  });
+
+  it('no longer carries its own position or fullscreen buttons', () => {
+    render(<ChatOverlay open={true} onToggle={() => {}} />);
+    expect(screen.queryByTitle('Fullscreen')).toBeNull();
+    expect(screen.queryByTitle('Popup')).toBeNull();
   });
 
   it('calls onSpawn when overlay opens for the first time', async () => {

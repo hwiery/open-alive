@@ -5,7 +5,7 @@ import type {
 } from '@open-alive/core';
 import type { RawMessageSubscribe } from '../../App.tsx';
 
-// Same origin convention as EfficioView: the server serves the UI and proxies in dev.
+// Same origin convention as the rest of the UI: the server serves it and proxies in dev.
 const API_BASE = `${window.location.protocol}//${window.location.hostname}:${window.location.port || '3141'}`;
 
 /** Creates a ticket; resolves null on success or an error message on failure.
@@ -21,6 +21,8 @@ export type TicketCreateFn = (
   autoCommit?: boolean,
   /** False keeps this ticket's text off the external review panels. */
   panelReview?: boolean,
+  /** Model/effort picked directly; each wins over the preset's value. */
+  override?: { model?: string; effort?: string },
 ) => Promise<string | null>;
 
 /** Applies a human evaluation label; resolves the updated record or null on failure. */
@@ -48,7 +50,7 @@ export interface UseTicketsResult {
 }
 
 /**
- * Subscribes to ticket state. Initial list over HTTP (like EfficioView), live
+ * Subscribes to ticket state. Initial list over HTTP, live
  * changes over the shared WS (`ticket:update`). Mutations POST/DELETE and merge
  * the returned ticket optimistically so the card reacts before the broadcast.
  */
@@ -102,7 +104,7 @@ export function useTickets(active: boolean, subscribeRaw: RawMessageSubscribe): 
     });
   }, [subscribeRaw]);
 
-  const createTicket = useCallback(async (goal: string, cwd: string, location?: TicketLocation, orchestrated?: boolean, preset?: TicketRunPreset, autoCommit?: boolean, panelReview?: boolean): Promise<string | null> => {
+  const createTicket = useCallback(async (goal: string, cwd: string, location?: TicketLocation, orchestrated?: boolean, preset?: TicketRunPreset, autoCommit?: boolean, panelReview?: boolean, override?: { model?: string; effort?: string }): Promise<string | null> => {
     try {
       const res = await fetch(`${API_BASE}/api/tickets`, {
         method: 'POST',
@@ -113,6 +115,8 @@ export function useTickets(active: boolean, subscribeRaw: RawMessageSubscribe): 
           ...(location && location.kind !== 'local' ? { location } : {}),
           ...(orchestrated ? { orchestrated: true } : {}),
           ...(preset ? { preset } : {}),
+          ...(override?.model ? { model: override.model } : {}),
+          ...(override?.effort ? { effort: override.effort } : {}),
           // Only the opt-out crosses the wire; omitted means the server default (on).
           ...(autoCommit === false ? { autoCommit: false } : {}),
           ...(panelReview === false ? { panelReview: false } : {}),

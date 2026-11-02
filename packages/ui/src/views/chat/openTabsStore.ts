@@ -15,7 +15,6 @@ export interface PersistedTab {
   cwd?: string;
   label: string;
   mode: TerminalMode;
-  claudeVariant?: 'claude' | 'agents';
   displayName?: string;
 }
 

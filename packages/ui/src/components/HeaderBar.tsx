@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ViewMode } from '../App.tsx';
 import type { UsageLimitsSnapshot } from '@open-alive/core';
 import type { SystemMetrics } from '../views/dashboard/hooks/useWebSocket.ts';
-import { toUsagePills, formatRemaining, usagePillColor } from './usagePills.ts';
-import { viewsInGroup, type ViewGroup } from './viewGroups.ts';
+import { UsageSummary, USAGE_FIT_ATTR } from './UsageSummary.tsx';
+import { ModeIcon } from '../views/chat/ChatOverlay.tsx';
+import { TERMINAL_PANEL_POSITIONS, type TerminalOverlayMode } from '../state/terminalViewSwitch.ts';
+import { viewsInGroup, isTerminalView, DEFAULT_TERMINAL_VIEW, type ViewGroup } from './viewGroups.ts';
+import { canDockTerminal } from '../state/terminalDock.ts';
 import {
   currentPermission,
   notificationsEnabled as readNotificationsEnabled,
@@ -25,6 +28,12 @@ interface HeaderBarProps {
   onOpenSettings?: () => void;
   systemMetrics?: SystemMetrics | null;
   usageLimits?: UsageLimitsSnapshot | null;
+  /** Floating to-do panel state; the button sits next to Cost. */
+  todoOpen?: boolean;
+  onToggleTodo?: () => void;
+  /** Where the window-layout terminal panel sits (floating / bottom / right). */
+  terminalPanelMode?: TerminalOverlayMode;
+  onTerminalPanelPosition?: (mode: TerminalOverlayMode) => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -52,11 +61,9 @@ interface MetricPillProps {
   color?: string;
   /** Small trailing text after the percentage, e.g. a reset countdown. */
   trailing?: string;
-  /** Dims the pill when the value is last-known rather than fresh. */
-  stale?: boolean;
 }
 
-function MetricPill({ label, ratio, primary, secondary, percent, color, trailing, stale }: MetricPillProps) {
+function MetricPill({ label, ratio, primary, secondary, percent, color, trailing }: MetricPillProps) {
   const barPct = Math.round(Math.max(0, Math.min(1, ratio)) * 100);
   const pillColor = color ?? metricColor(ratio);
   const pct = percent ?? barPct;
@@ -75,8 +82,6 @@ function MetricPill({ label, ratio, primary, secondary, percent, color, trailing
         fontFamily: 'var(--font-mono)',
         fontSize: 11,
         color: 'var(--text-secondary)',
-        opacity: stale ? 0.45 : 1,
-        transition: 'opacity 300ms ease',
       }}
     >
       <span style={{ fontWeight: 600, letterSpacing: '0.04em', color: 'var(--text-secondary)', opacity: 0.75 }}>
@@ -208,9 +213,18 @@ export function HeaderBar({
   onOpenSettings,
   systemMetrics,
   usageLimits,
+  terminalPanelMode = 'popup',
+  onTerminalPanelPosition,
+  todoOpen = false,
+  onToggleTodo,
 }: HeaderBarProps) {
   const { t, i18n } = useTranslation();
   const isKo = i18n.language?.startsWith('ko');
+
+  // "Terminal" reopens whichever layout was used last.
+  const terminalActive = isTerminalView(viewMode);
+  const lastTerminalView = useRef<ViewMode>(DEFAULT_TERMINAL_VIEW);
+  if (terminalActive) lastTerminalView.current = viewMode;
 
   // Notification permission/preference. Stored in localStorage; the bell button reflects
   // three states: unsupported (hidden), needs-permission (request on click), or
@@ -245,7 +259,6 @@ export function HeaderBar({
     return () => clearInterval(id);
   }, []);
 
-  const usagePills = toUsagePills(usageLimits ?? null);
 
   const toggleLang = () => {
     i18n.changeLanguage(isKo ? 'en' : 'ko');
@@ -267,6 +280,7 @@ export function HeaderBar({
 
   return (
     <div
+      {...{ [USAGE_FIT_ATTR]: '' }}
       style={{
         position: 'fixed',
         top: 0,
@@ -302,92 +316,90 @@ export function HeaderBar({
         />
       </div>
 
-      {/* View navigation — three inline tiers, no dropdown and no group captions:
-          primary (ticket hub) · monitor (live observation) · tools (board + workspace). */}
-      <div
-        role="group"
-        aria-label={t('viewMode.label')}
-        style={{ display: 'flex', alignItems: 'center', gap: 10 }}
-      >
-        {/* Tier 1 — Tickets: the default surface, accent-emphasised. */}
-        {(() => {
-          const active = viewMode === 'tickets';
-          return (
-            <button
-              role="tab"
-              aria-selected={active}
-              onClick={() => onViewModeChange('tickets')}
-              style={{
-                padding: '6px 16px',
-                fontSize: 12,
-                fontWeight: 700,
-                fontFamily: 'inherit',
-                borderRadius: 8,
-                cursor: 'pointer',
-                border: '1px solid var(--accent-blue)',
-                color: active ? '#fff' : 'var(--accent-blue)',
-                background: active ? 'var(--accent-blue)' : 'rgba(88, 166, 255, 0.10)',
-                transition: 'all 0.15s ease',
-                letterSpacing: '-0.01em',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {t('viewMode.tickets')}
-            </button>
-          );
-        })()}
-
-        <div style={{ width: 1, height: 22, background: 'var(--border-color)' }} />
-
-        {/* Tier 2 — Monitor: live observation surfaces. */}
-        <NavGroup
-          group="monitor"
-          ariaLabel={t('viewMode.groupMonitor')}
-          viewMode={viewMode}
-          onSelect={onViewModeChange}
-          t={t}
-        />
-
-        <div style={{ width: 1, height: 22, background: 'var(--border-color)' }} />
-
-        {/* Tier 3 — Tools: analysis (board) + productivity (workspace). */}
-        <NavGroup
-          group="tools"
-          ariaLabel={t('viewMode.groupTools')}
-          viewMode={viewMode}
-          onSelect={onViewModeChange}
-          t={t}
-        />
-      </div>
-
-      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-        {/* Claude subscription usage — 5h session, 7d, and any model-scoped weekly
-            window (e.g. Fable), polled server-side every 60s. A failed poll keeps
-            the last values and dims them rather than dropping the pills. */}
-        {usagePills.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 4 }}>
-            {usagePills.map((p) => {
-              const remaining = formatRemaining(p.resetsAt, now, p.remainingUnit);
-              const parts = [
-                remaining ? t('header.usageResetsIn', { time: remaining }) : null,
-                p.stale ? t('header.usageStale') : null,
-              ].filter(Boolean) as string[];
+      {/* View navigation: two views — Tickets and Terminal. The terminal's
+          layout toggle (window · split · full) appears only while it is open. */}
+      <div role="group" aria-label={t('viewMode.label')} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div
+          role="tablist"
+          aria-label={t('viewMode.label')}
+          style={{ display: 'flex', background: 'var(--surface-2)', border: '1px solid var(--border-color)', borderRadius: 8, padding: 2 }}
+        >
+          <NavPill active={viewMode === 'tickets'} label={t('viewMode.tickets')} onClick={() => onViewModeChange('tickets')} />
+          <NavPill
+            active={terminalActive}
+            label={t('viewMode.terminal')}
+            onClick={() => onViewModeChange(lastTerminalView.current)}
+          />
+          <NavPill active={viewMode === 'board'} label={t('viewMode.cost')} onClick={() => onViewModeChange('board')} />
+        </div>
+        {/* To-do is not a view: a toggle for the floating panel that follows every view. */}
+        {onToggleTodo && (
+          <button
+            type="button"
+            aria-pressed={todoOpen}
+            onClick={onToggleTodo}
+            style={{
+              height: 30,
+              padding: '0 12px',
+              borderRadius: 8,
+              fontSize: 12,
+              fontWeight: 600,
+              fontFamily: 'inherit',
+              cursor: 'pointer',
+              border: `1px solid ${todoOpen ? 'var(--accent-blue)' : 'var(--border-color)'}`,
+              background: todoOpen ? 'var(--surface-2)' : 'transparent',
+              color: todoOpen ? 'var(--accent-blue)' : 'var(--text-secondary)',
+            }}
+          >
+            {t('todo.open')}
+          </button>
+        )}
+        {terminalActive && (
+          <NavGroup group="terminal" ariaLabel={t('viewMode.layout.label')} viewMode={viewMode} onSelect={onViewModeChange} t={t} />
+        )}
+        {/* Window layout and tickets: where the terminal panel sits. */}
+        {canDockTerminal(viewMode) && onTerminalPanelPosition && (
+          <div
+            role="group"
+            aria-label={t('terminal.positionLabel')}
+            data-testid="terminal-position"
+            style={{ display: 'flex', background: 'var(--surface-2)', border: '1px solid var(--border-color)', borderRadius: 8, padding: 2 }}
+          >
+            {TERMINAL_PANEL_POSITIONS.map((m) => {
+              const active = terminalPanelMode === m;
               return (
-                <MetricPill
-                  key={p.label}
-                  label={p.label}
-                  ratio={p.ratio}
-                  percent={p.percent}
-                  color={usagePillColor(p.baseColor, p.ratio)}
-                  trailing={remaining ?? undefined}
-                  stale={p.stale}
-                  primary={`${p.percent}%`}
-                  secondary={parts.length > 0 ? parts.join(' · ') : undefined}
-                />
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={active}
+                  aria-label={t(`terminal.mode${m.charAt(0).toUpperCase()}${m.slice(1)}`)}
+                  title={t(`terminal.mode${m.charAt(0).toUpperCase()}${m.slice(1)}`)}
+                  onClick={() => onTerminalPanelPosition(m)}
+                  style={{
+                    width: 28,
+                    height: 24,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: 'none',
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    background: active ? 'var(--surface-3, rgba(88,166,255,0.15))' : 'transparent',
+                    color: active ? 'var(--accent-blue)' : 'var(--text-secondary)',
+                  }}
+                >
+                  <ModeIcon mode={m} />
+                </button>
               );
             })}
           </div>
         )}
+      </div>
+
+      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* Claude + Codex subscription usage, one compact chip each; clicking
+            one opens the cost view. */}
+        <UsageSummary usage={usageLimits ?? null} now={now} onOpen={() => onViewModeChange('board')} />
 
         {/* CPU / RAM indicators — live from server's os module, 2s cadence. */}
         {systemMetrics && (
@@ -503,13 +515,13 @@ export function HeaderBar({
           </svg>
         </button>
 
-        {/* Chat & right-panel toggles only apply to Animation view:
-            - In List view the terminal is always embedded, so chat toggle is meaningless.
-            - In List view there is no RightPanel, so its toggle is hidden. */}
-        {viewMode === 'animation' && (
-          <>
+        {/* Terminal toggle: views that show the terminal as a panel (window layout, tickets).
+            In List/Spread the terminal is the body, so the toggle is meaningless. */}
+        {canDockTerminal(viewMode) && (
             <button
               onClick={onToggleChat}
+              data-testid="terminal-toggle"
+              aria-pressed={chatOpen}
               style={iconButtonStyle}
               aria-label={t('header.toggleChat')}
               title={t('header.toggleChat')}
@@ -519,7 +531,10 @@ export function HeaderBar({
                 <rect x="1" y="10" width="14" height="5" rx="1" fill={chatOpen ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.2" />
               </svg>
             </button>
-
+        )}
+        {/* The right panel only exists in the window layout. */}
+        {viewMode === 'animation' && (
+          <>
             <button
               onClick={onToggleRightPanel}
               style={iconButtonStyle}

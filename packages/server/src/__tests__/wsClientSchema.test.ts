@@ -9,6 +9,11 @@ describe('parseClientMessage', () => {
     expect(msg).toEqual({ type: 'terminal:spawn', tabId: 'T1', cwd: '/tmp', mode: 'claude' });
   });
 
+  it('accepts a codex terminal:spawn', () => {
+    const raw = { type: 'terminal:spawn', tabId: 'T2', mode: 'codex', skipPermissions: true };
+    expect(parseClientMessage(JSON.stringify(raw))).toEqual(raw);
+  });
+
   it('accepts ping and request:snapshot', () => {
     expect(parseClientMessage(JSON.stringify({ type: 'ping' }))).toEqual({ type: 'ping' });
     expect(parseClientMessage(JSON.stringify({ type: 'request:snapshot' }))).toEqual({

@@ -1,24 +1,46 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { BackendStatus } from '@open-alive/core';
-import { loadPresets, createPreset, deletePreset, buildSSHCommand, type SSHPreset } from '../chat/sshPresets.ts';
+import { loadPresets, createPreset, deletePreset, buildSSHCommand, presetTarget, type SSHPreset } from '../chat/sshPresets.ts';
+import { CLAUDE_MODELS_CHANGED_EVENT } from '../../hooks/useClaudeModels.ts';
+
+/** The connection everything else builds on; checked before any other backend. */
+const CLAUDE_ID = 'claude-local';
 
 const API_BASE = `${window.location.protocol}//${window.location.hostname}:${window.location.port || '3141'}`;
 
 interface BackendsPanelProps {
   /** Load + refresh the backend list when this becomes true (e.g. its tab opens). */
   active: boolean;
+  /** Rendered right below the Claude card (the optional additional-API form). */
+  gatewaySlot?: ReactNode;
+  /** Hide the SSH host list (onboarding shows only the connection steps). */
+  hideSsh?: boolean;
+}
+
+/** POST a single backend check; null on any failure. Notifies model listeners after a Claude check. */
+async function checkOne(id: string): Promise<BackendStatus | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/backends/${id}/check`, { method: 'POST' });
+    if (!res.ok) return null;
+    const { status } = (await res.json()) as { status: BackendStatus };
+    if (id === CLAUDE_ID && status.connected) window.dispatchEvent(new CustomEvent(CLAUDE_MODELS_CHANGED_EVENT));
+    return status;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Backend connection surface. Lives inside the Settings modal (backend tab).
- * Lists claude-local (orchestrator), litellm (sub-agent), and ssh (location),
- * each with a live "check connection" button, plus a "check all" action.
+ * Claude (the required base connection) comes first and is checked first — its
+ * check also refreshes which models the ticket presets use. Below it sits the
+ * optional additional API (gateway form + its status card), then SSH hosts.
  *
  * Renders as an embeddable stack (no full-height scroll wrapper) so the Settings
  * modal body owns scrolling.
  */
-export function BackendsPanel({ active }: BackendsPanelProps) {
+export function BackendsPanel({ active, gatewaySlot, hideSsh = false }: BackendsPanelProps) {
   const { t } = useTranslation();
   const [backends, setBackends] = useState<BackendStatus[]>([]);
   const [checking, setChecking] = useState<string | null>(null);
@@ -30,7 +52,11 @@ export function BackendsPanel({ active }: BackendsPanelProps) {
     try {
       const res = await fetch(`${API_BASE}/api/backends`);
       const data = (await res.json()) as { backends: BackendStatus[] };
-      setBackends(data.backends ?? []);
+      // Keep check results already on screen: the list endpoint never carries them.
+      setBackends((prev) => {
+        const checked = new Map(prev.filter((b) => b.connected !== undefined).map((b) => [b.id, b]));
+        return (data.backends ?? []).map((b) => checked.get(b.id) ?? b);
+      });
     } catch {
       // leave as-is
     } finally {
@@ -38,9 +64,21 @@ export function BackendsPanel({ active }: BackendsPanelProps) {
     }
   }, []);
 
+  const check = useCallback(async (id: string) => {
+    setChecking(id);
+    try {
+      const status = await checkOne(id);
+      if (status) setBackends((prev) => prev.map((b) => (b.id === status.id ? status : b)));
+    } finally {
+      setChecking(null);
+    }
+  }, []);
+
+  // Opening the panel verifies the Claude connection straight away.
   useEffect(() => {
-    if (active) void refresh();
-  }, [active, refresh]);
+    if (!active) return;
+    void refresh().then(() => check(CLAUDE_ID));
+  }, [active, refresh, check]);
 
   // A gateway saved in the form above adds or removes the litellm card.
   useEffect(() => {
@@ -49,39 +87,14 @@ export function BackendsPanel({ active }: BackendsPanelProps) {
     return () => window.removeEventListener('open-alive:gateway-changed', onChanged);
   }, [refresh]);
 
-  const check = useCallback(async (id: string) => {
-    setChecking(id);
-    try {
-      const res = await fetch(`${API_BASE}/api/backends/${id}/check`, { method: 'POST' });
-      if (res.ok) {
-        const { status } = (await res.json()) as { status: BackendStatus };
-        setBackends((prev) => prev.map((b) => (b.id === status.id ? status : b)));
-      }
-    } catch {
-      // ignore
-    } finally {
-      setChecking(null);
-    }
-  }, []);
-
-  // Probe every connectable backend at once — the manual counterpart to the
-  // app's startup health check. SSH (location kind) is checked per-host below.
+  // The manual counterpart to the app's startup health check: Claude first,
+  // then the rest together. SSH (location kind) is checked per-host below.
   const checkAll = useCallback(async () => {
     setCheckingAll(true);
     try {
-      const targets = backends.filter((b) => b.kind !== 'location');
-      const updated = await Promise.all(
-        targets.map(async (b) => {
-          try {
-            const res = await fetch(`${API_BASE}/api/backends/${b.id}/check`, { method: 'POST' });
-            if (!res.ok) return null;
-            const { status } = (await res.json()) as { status: BackendStatus };
-            return status;
-          } catch {
-            return null;
-          }
-        }),
-      );
+      const claude = await checkOne(CLAUDE_ID);
+      const others = backends.filter((b) => b.kind !== 'location' && b.id !== CLAUDE_ID);
+      const updated = [claude, ...(await Promise.all(others.map((b) => checkOne(b.id))))];
       const byId = new Map(updated.filter((s): s is BackendStatus => s !== null).map((s) => [s.id, s]));
       setBackends((prev) => prev.map((b) => byId.get(b.id) ?? b));
     } finally {
@@ -119,10 +132,22 @@ export function BackendsPanel({ active }: BackendsPanelProps) {
       {loading && backends.length === 0 ? (
         <div style={{ fontSize: 13, opacity: 0.5 }}>{t('backends.loading')}</div>
       ) : (
-        backends.map((b) => <BackendCard key={b.id} backend={b} checking={checking === b.id || checkingAll} onCheck={() => check(b.id)} t={t} />)
+        backends
+          .filter((b) => b.id === CLAUDE_ID)
+          .map((b) => (
+            <BackendCard key={b.id} backend={b} required checking={checking === b.id || checkingAll} onCheck={() => check(b.id)} t={t} />
+          ))
       )}
 
-      <SshHosts t={t} />
+      {gatewaySlot}
+
+      {backends
+        .filter((b) => b.id !== CLAUDE_ID)
+        .map((b) => (
+          <BackendCard key={b.id} backend={b} checking={checking === b.id || checkingAll} onCheck={() => check(b.id)} t={t} />
+        ))}
+
+      {!hideSsh && <SshHosts t={t} />}
     </div>
   );
 }
@@ -139,14 +164,14 @@ interface HostCheck {
 }
 
 function SshHosts({ t }: { t: (key: string) => string }) {
-  const [hosts, setHosts] = useState<SSHPreset[]>(() => loadPresets().filter((p) => p.host));
+  const [hosts, setHosts] = useState<SSHPreset[]>(() => loadPresets().flatMap((p) => { const target = presetTarget(p); return target ? [{ ...p, ...target }] : []; }));
   const [label, setLabel] = useState('');
   const [host, setHost] = useState('');
   const [user, setUser] = useState('');
   const [port, setPort] = useState('');
   const [checks, setChecks] = useState<Record<string, HostCheck>>({});
 
-  const refresh = () => setHosts(loadPresets().filter((p) => p.host));
+  const refresh = () => setHosts(loadPresets().flatMap((p) => { const target = presetTarget(p); return target ? [{ ...p, ...target }] : []; }));
 
   // Verify a specific host by asking the server to browse it over SSH. A returned
   // path means the connection + auth work; an error means it failed.
@@ -313,11 +338,14 @@ function SshHosts({ t }: { t: (key: string) => string }) {
 
 function BackendCard({
   backend,
+  required = false,
   checking,
   onCheck,
   t,
 }: {
   backend: BackendStatus;
+  /** Marks the base connection (Claude) that the rest of the app depends on. */
+  required?: boolean;
   checking: boolean;
   onCheck: () => void;
   t: (key: string) => string;
@@ -346,7 +374,21 @@ function BackendCard({
       <span style={{ width: 10, height: 10, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary, #e6edf3)' }}>{backend.label}</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary, #e6edf3)' }}>{t(`backends.label.${backend.id}`)}</span>
+          {required && (
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                color: 'var(--accent-blue, #58a6ff)',
+                border: '1px solid var(--accent-blue, #58a6ff)',
+                borderRadius: 5,
+                padding: '0 6px',
+              }}
+            >
+              {t('backends.required')}
+            </span>
+          )}
           <span
             style={{
               fontSize: 10,

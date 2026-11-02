@@ -151,3 +151,75 @@ function shellQuote(value: string): string {
   if (/^[A-Za-z0-9_./:@~-]+$/.test(value)) return value;
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
+
+/** Where a preset connects, for running a ticket there over SSH. */
+export interface SSHTarget {
+  host: string;
+  user?: string;
+  port?: number;
+  identityFile?: string;
+}
+
+/** ssh options that take a value (`-p 22`), so their value is not mistaken for the host. */
+const SSH_VALUE_FLAGS = new Set(['-b', '-c', '-D', '-E', '-e', '-F', '-I', '-i', '-J', '-L', '-l', '-m', '-O', '-o', '-p', '-Q', '-R', '-S', '-W', '-w']);
+/** A host token: hostname, ssh_config alias, or IPv4/IPv6 — nothing a shell would interpret. */
+const HOST_TOKEN = /^[A-Za-z0-9._:-]+$/;
+
+function unquote(token: string): string {
+  return token.replace(/^'(.*)'$/, '$1').replace(/^"(.*)"$/, '$1');
+}
+
+/**
+ * The SSH target a preset reaches, or null when it is not a plain `ssh` login.
+ *
+ * Presets saved with structured fields use them directly. A free-form command
+ * (`ssh studio`, `ssh -p 2222 -i ~/.ssh/k dev@box`) is parsed so presets made in
+ * the terminal's SSH tab work as ticket locations too. A command that runs
+ * something remotely, chains commands, or uses anything but `ssh` is not a login
+ * target and stays terminal-only.
+ */
+export function presetTarget(preset: Pick<SSHPreset, 'command' | 'host' | 'user' | 'port' | 'identityFile'>): SSHTarget | null {
+  if (preset.host && preset.host.trim()) {
+    return {
+      host: preset.host.trim(),
+      ...(preset.user ? { user: preset.user } : {}),
+      ...(preset.port ? { port: preset.port } : {}),
+      ...(preset.identityFile ? { identityFile: preset.identityFile } : {}),
+    };
+  }
+  if (/[;&|`$<>()\n]/.test(preset.command)) return null;
+  const tokens = preset.command.trim().split(/\s+/).map(unquote);
+  if (tokens[0] !== 'ssh') return null;
+  let user: string | undefined;
+  let port: number | undefined;
+  let identityFile: string | undefined;
+  let dest: string | undefined;
+  for (let i = 1; i < tokens.length; i += 1) {
+    const tok = tokens[i]!;
+    if (tok.startsWith('-')) {
+      const flag = tok.slice(0, 2);
+      const inline = tok.length > 2 ? tok.slice(2) : undefined;
+      if (SSH_VALUE_FLAGS.has(flag)) {
+        const value = inline ?? tokens[++i];
+        if (value === undefined) return null;
+        if (flag === '-p') port = Number(value);
+        if (flag === '-l') user = value;
+        if (flag === '-i') identityFile = value;
+      }
+      continue;
+    }
+    if (dest !== undefined) return null; // a remote command follows the host
+    dest = tok;
+  }
+  if (!dest) return null;
+  const at = dest.lastIndexOf('@');
+  const host = at >= 0 ? dest.slice(at + 1) : dest;
+  if (at >= 0) user = dest.slice(0, at);
+  if (!HOST_TOKEN.test(host) || (port !== undefined && !(Number.isInteger(port) && port > 0 && port < 65536))) return null;
+  return {
+    host,
+    ...(user ? { user } : {}),
+    ...(port ? { port } : {}),
+    ...(identityFile ? { identityFile } : {}),
+  };
+}

@@ -41,16 +41,47 @@ describe('createTicketStore', () => {
   it('snapshots the run preset into concrete model/effort at creation', async () => {
     const store = makeStore();
     const t = await store.create({ goal: 'do X', cwd: '/repo', preset: 'deep' });
-    expect(t).toMatchObject({ preset: 'deep', requestedModel: 'claude-opus-5', effort: 'max' });
+    expect(t).toMatchObject({ preset: 'deep', requestedModel: 'claude-opus-5-5', effort: 'max' });
 
     const onDisk = JSON.parse(await readFile(filePath, 'utf-8'));
-    expect(onDisk[0]).toMatchObject({ preset: 'deep', requestedModel: 'claude-opus-5', effort: 'max' });
+    expect(onDisk[0]).toMatchObject({ preset: 'deep', requestedModel: 'claude-opus-5-5', effort: 'max' });
+  });
+
+  it('snapshots the model the live catalogue maps the tier to', async () => {
+    const store = createTicketStore({
+      filePath,
+      uuid: () => 'id-live',
+      currentModels: () => ({ haiku: 'claude-haiku-6', sonnet: 'claude-sonnet-6', opus: 'claude-opus-6', fable: 'claude-fable-6' }),
+    });
+    const t = await store.create({ goal: 'g', cwd: '/r', preset: 'deep' });
+    expect(t).toMatchObject({ requestedModel: 'claude-opus-6', effort: 'max' });
+  });
+
+  it('uses a directly picked model and effort over the preset', async () => {
+    const store = createTicketStore({
+      filePath,
+      uuid: () => 'id-pick',
+      currentModels: () => ({ haiku: 'claude-haiku-6', sonnet: 'claude-sonnet-6', opus: 'claude-opus-6', fable: 'claude-fable-6' }),
+    });
+    const full = await store.create({ goal: 'g', cwd: '/r', preset: 'deep', model: 'claude-sonnet-5-5[1m]' });
+    expect(full).toMatchObject({ requestedModel: 'claude-sonnet-5-5[1m]', effort: 'max' });
+    // A tier alias is snapshotted to the full id it means right now.
+    const alias = await store.create({ goal: 'g', cwd: '/r', model: 'haiku', effort: 'low' });
+    expect(alias).toMatchObject({ requestedModel: 'claude-haiku-6', effort: 'low' });
+  });
+
+  it('marks a ticket with a non-Claude model as a Codex ticket', async () => {
+    const store = makeStore();
+    const codex = await store.create({ goal: 'g', cwd: '/r', model: 'gpt-5.6-terra', effort: 'high' });
+    expect(codex).toMatchObject({ engine: 'codex', requestedModel: 'gpt-5.6-terra', effort: 'high' });
+    const claude = await store.create({ goal: 'g', cwd: '/r', model: 'opus' });
+    expect(claude.engine).toBeUndefined();
   });
 
   it('snapshots the medium preset as the same model as standard, one effort step down', async () => {
     const store = makeStore();
     const t = await store.create({ goal: 'do X', cwd: '/repo', preset: 'medium' });
-    expect(t).toMatchObject({ preset: 'medium', requestedModel: 'claude-opus-5', effort: 'medium' });
+    expect(t).toMatchObject({ preset: 'medium', requestedModel: 'claude-opus-5-5', effort: 'medium' });
   });
 
   it('leaves the run profile unset when no preset is given (CLI defaults)', async () => {
@@ -66,7 +97,7 @@ describe('createTicketStore', () => {
     await a.create({ goal: 'g', cwd: '/r', preset: 'fast' });
     const b = makeStore();
     await b.load();
-    expect(b.list()[0]).toMatchObject({ preset: 'fast', requestedModel: 'claude-sonnet-5', effort: 'low' });
+    expect(b.list()[0]).toMatchObject({ preset: 'fast', requestedModel: 'claude-sonnet-5-5', effort: 'low' });
   });
 
   it('reloads persisted tickets from disk', async () => {

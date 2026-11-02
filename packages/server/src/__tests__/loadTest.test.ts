@@ -90,10 +90,14 @@ describe('Load Tests', () => {
     const sessionId = 'burst-session';
     await postEvent('SessionStart', sessionId);
 
-    const events = Array.from({ length: 500 }, () =>
-      postEvent('PreToolUse', sessionId, { tool_name: 'Write' })
-    );
-    const results = await Promise.all(events);
+    // 500 events in waves of 50: Windows runners reset sockets when hundreds
+    // of connections open at once, which tests the OS, not the server.
+    const results: Response[] = [];
+    for (let wave = 0; wave < 10; wave += 1) {
+      results.push(...(await Promise.all(
+        Array.from({ length: 50 }, () => postEvent('PreToolUse', sessionId, { tool_name: 'Write' })),
+      )));
+    }
     const allOk = results.every((r) => r.status === 200);
     expect(allOk).toBe(true);
 

@@ -16,10 +16,12 @@
  */
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { UsageLimitsSnapshot, UsageWindow, ScopedUsageWindow } from '@open-alive/core';
+import { fetchClaudeUsageViaCli } from './claudeCliUsage.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -27,8 +29,8 @@ const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
 const OAUTH_BETA = 'oauth-2025-04-20';
 /** Keychain service name Claude Code stores its credentials under on macOS. */
 const KEYCHAIN_SERVICE = 'Claude Code-credentials';
-/** 60s: `/usage` moves slowly, and each poll costs a keychain read + one request. */
-const DEFAULT_INTERVAL_MS = 60_000;
+/** 15 min: `/usage` moves slowly, and each poll starts a short `claude` process. */
+const DEFAULT_INTERVAL_MS = 15 * 60_000;
 
 const asNum = (v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v) ? v : null;
@@ -133,11 +135,20 @@ export async function readOAuthToken(): Promise<string | null> {
 
 export interface UsageLimitsPollerOptions {
   intervalMs?: number;
+  /** Primary source; injectable for tests. Defaults to `claude -p /usage`. */
+  readCli?: () => Promise<UsageLimitsSnapshot | null>;
   /** Injectable for tests; defaults to reading the real credential store. */
   readToken?: () => Promise<string | null>;
   /** Injectable for tests; defaults to global fetch. */
   fetchImpl?: (url: string, init?: RequestInit) => Promise<Response>;
+  /** Last good snapshot is kept here so a restart shows it at once instead of nothing. */
+  cacheFile?: string;
+  now?: () => number;
 }
+
+/** First wait after a 429; doubles per consecutive 429 up to the cap. */
+const BACKOFF_START_MS = 2 * 60_000;
+const BACKOFF_MAX_MS = 15 * 60_000;
 
 /**
  * Periodically refreshes {@link UsageLimitsSnapshot}.
@@ -148,16 +159,27 @@ export interface UsageLimitsPollerOptions {
  */
 export class UsageLimitsPoller {
   private intervalMs: number;
+  private readCli: () => Promise<UsageLimitsSnapshot | null>;
   private readToken: () => Promise<string | null>;
   private fetchImpl: (url: string, init?: RequestInit) => Promise<Response>;
   private handle: ReturnType<typeof setInterval> | null = null;
   private lastSnapshot: UsageLimitsSnapshot | null = null;
   private listeners = new Set<(snapshot: UsageLimitsSnapshot) => void>();
 
+  private cacheFile: string | undefined;
+  private now: () => number;
+  /** The usage endpoint rate-limits (HTTP 429, Retry-After 0); polls pause until this time. */
+  private backoffUntil = 0;
+  private backoffMs = 0;
+
   constructor(options: UsageLimitsPollerOptions = {}) {
     this.intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
+    this.readCli = options.readCli ?? (() => fetchClaudeUsageViaCli());
     this.readToken = options.readToken ?? readOAuthToken;
     this.fetchImpl = options.fetchImpl ?? ((url, init) => fetch(url, init));
+    this.cacheFile = options.cacheFile;
+    this.now = options.now ?? Date.now;
+    this.lastSnapshot = this.readCache();
   }
 
   start(): void {
@@ -184,17 +206,52 @@ export class UsageLimitsPoller {
     return () => this.listeners.delete(listener);
   }
 
-  /** One fetch cycle. Exposed for tests and for the initial eager poll. */
+  /**
+   * One fetch cycle. Exposed for tests and for the initial eager poll.
+   *
+   * Claude Code's own `/usage` comes first; the raw OAuth endpoint is only the
+   * fallback (Claude Code missing or failing), and only it is subject to the
+   * 429 backoff.
+   */
   async pollOnce(): Promise<void> {
-    const snapshot = await this.fetchSnapshot();
-    if (snapshot) {
-      this.publish(snapshot);
+    const fromCli = await this.readCli().catch(() => null);
+    if (fromCli) {
+      this.publish(fromCli);
+      this.writeCache(fromCli);
       return;
     }
-    // Failed poll: keep the previous values, flagged stale.
-    if (this.lastSnapshot && !this.lastSnapshot.stale) {
-      this.publish({ ...this.lastSnapshot, stale: true });
+    if (this.now() < this.backoffUntil) {
+      this.markStale();
+      return;
     }
+    const snapshot = await this.fetchSnapshot();
+    if (snapshot === 'rate-limited') {
+      this.backoffMs = Math.min(BACKOFF_MAX_MS, this.backoffMs ? this.backoffMs * 2 : BACKOFF_START_MS);
+      this.backoffUntil = this.now() + this.backoffMs;
+      this.markStale();
+      return;
+    }
+    if (snapshot) {
+      this.backoffMs = 0;
+      this.backoffUntil = 0;
+      this.publish(snapshot);
+      this.writeCache(snapshot);
+      return;
+    }
+    this.markStale();
+  }
+
+  /**
+   * Failed poll: keep the previous values, flagged stale, so the UI can say the
+   * fetch failed. With nothing fetched yet, an empty stale snapshot says the same.
+   */
+  private markStale(): void {
+    if (this.lastSnapshot?.stale) return;
+    this.publish(
+      this.lastSnapshot
+        ? { ...this.lastSnapshot, stale: true }
+        : { fiveHour: null, sevenDay: null, scopedWeekly: [], fetchedAt: 0, stale: true },
+    );
   }
 
   private publish(snapshot: UsageLimitsSnapshot): void {
@@ -202,7 +259,28 @@ export class UsageLimitsPoller {
     for (const listener of this.listeners) listener(snapshot);
   }
 
-  private async fetchSnapshot(): Promise<UsageLimitsSnapshot | null> {
+  private readCache(): UsageLimitsSnapshot | null {
+    if (!this.cacheFile) return null;
+    try {
+      const parsed = JSON.parse(readFileSync(this.cacheFile, 'utf8')) as UsageLimitsSnapshot;
+      // Shown as current until the eager first poll says otherwise (seconds after start).
+      return parsed && typeof parsed === 'object' && Array.isArray(parsed.scopedWeekly) ? { ...parsed, stale: false } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private writeCache(snapshot: UsageLimitsSnapshot): void {
+    if (!this.cacheFile) return;
+    try {
+      // Percentages and reset times only — never the token.
+      writeFileSync(this.cacheFile, JSON.stringify(snapshot), { mode: 0o600 });
+    } catch {
+      // a missing cache only costs the instant display after a restart
+    }
+  }
+
+  private async fetchSnapshot(): Promise<UsageLimitsSnapshot | 'rate-limited' | null> {
     const token = await this.readToken();
     if (!token) return null;
     try {
@@ -212,8 +290,9 @@ export class UsageLimitsPoller {
           'anthropic-beta': OAUTH_BETA,
         },
       });
+      if (res.status === 429) return 'rate-limited';
       if (!res.ok) return null;
-      return parseUsageResponse(await res.json(), Date.now());
+      return parseUsageResponse(await res.json(), this.now());
     } catch {
       return null;
     }

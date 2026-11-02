@@ -4,13 +4,15 @@ import type { WSServerMessage } from '@open-alive/core';
 import i18n from '@open-alive/i18n';
 import { HeaderBar } from './components/HeaderBar.tsx';
 import { normalizeViewMode } from './components/viewGroups.ts';
+import { shouldCollapseTerminalOnViewSelect, TERMINAL_SET_MODE_EVENT, type TerminalOverlayMode } from './state/terminalViewSwitch.ts';
 import { useWebSocket } from './views/dashboard/hooks/useWebSocket.ts';
 import { playErrorSound, playResourceAlertSound, playWaitingSound, installAudioUnlock } from './services/sound.ts';
 import { ChatOverlay } from './views/chat/ChatOverlay.tsx';
 import type { TerminalEventHandler, SshSessionInfo } from './views/chat/ChatOverlay.tsx';
 import { RepoSidebar } from './components/RepoSidebar/RepoSidebar.tsx';
 import { useRunTree } from './hooks/useRunTree.ts';
-import { layoutInsets } from './state/layoutInsets.ts';
+import { layoutInsets, sidebarFor } from './state/layoutInsets.ts';
+import { loadTerminalMode, browserStorage, terminalDockInsets } from './state/terminalDock.ts';
 import { OPEN_RUN_EVENT, type OpenRunIntent } from './state/openRun.ts';
 import { loadSelection, saveSelection, selectionReducer } from './state/selection.ts';
 import { loadExpand, saveExpand, toggleRepo, toggleWorktree, type ExpandState } from './state/sidebarExpand.ts';
@@ -19,6 +21,8 @@ import { fireNotification } from './services/notifications.ts';
 import { buildAlertContent } from './services/notificationContent.ts';
 import type { AlertContext, AlertKind } from './services/notificationContent.ts';
 import { SettingsModal } from './components/SettingsModal.tsx';
+import { FloatingTodo } from './components/FloatingTodo.tsx';
+import { OnboardingModal, isOnboardingDone, OPEN_ONBOARDING_EVENT } from './components/OnboardingModal.tsx';
 import { ResourceAlert, type ResourceAlertData } from './components/ResourceAlert.tsx';
 import { BackendAlert, type BackendAlertData } from './components/BackendAlert.tsx';
 import { checkBackendHealth } from './services/backendHealth.ts';
@@ -35,13 +39,12 @@ const AgentListView = lazy(() =>
 const TicketsView = lazy(() =>
   import('./views/tickets/TicketsView.tsx').then(m => ({ default: m.TicketsView })),
 );
-import { WorkspaceTreeView } from './views/workspace/WorkspaceTreeView';
 import { isAuthReloading } from './lib/auth.ts';
 import { useIsPhone } from './mobile/useIsPhone.ts';
 import { MobileApp } from './mobile/MobileApp.tsx';
 import { BoardView } from './views/board/BoardView.tsx';
 
-export type ViewMode = 'animation' | 'list' | 'prompt' | 'efficio' | 'archive' | 'ticketMgmt' | 'spread' | 'jarvis' | 'workspace' | 'tickets' | 'data' | 'board';
+export type ViewMode = 'animation' | 'list' | 'prompt' | 'archive' | 'ticketMgmt' | 'spread' | 'jarvis' | 'workspace' | 'tickets' | 'data' | 'board';
 
 export type RawMessageSubscribe = (handler: (msg: WSServerMessage) => void) => () => void;
 
@@ -78,6 +81,32 @@ export default function App() {
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [chatOpen, setChatOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Floating to-do panel, opened from the header; stays open across views.
+  const [todoOpen, setTodoOpen] = useState(() => {
+    try {
+      return localStorage.getItem('open-alive:todo-open') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleTodo = useCallback((next?: boolean) => {
+    setTodoOpen((prev) => {
+      const value = next ?? !prev;
+      try {
+        localStorage.setItem('open-alive:todo-open', value ? '1' : '0');
+      } catch {
+        // storage disabled: open state just is not remembered
+      }
+      return value;
+    });
+  }, []);
+  // First run: connect Claude (and optionally an additional API) before anything else.
+  const [onboardingOpen, setOnboardingOpen] = useState(() => !isOnboardingDone());
+  useEffect(() => {
+    const open = () => setOnboardingOpen(true);
+    window.addEventListener(OPEN_ONBOARDING_EVENT, open);
+    return () => window.removeEventListener(OPEN_ONBOARDING_EVENT, open);
+  }, []);
   // SSH tab presence — mirrored from ChatOverlay so the sidebar can show active SSH sessions.
   // We can't track what's happening inside the remote shell (hooks are local-only) but we
   // can at least show that a session is open and whether it's producing output.
@@ -240,7 +269,7 @@ export default function App() {
     }
   }, []);
 
-  const { agents, events, completedSessions, stats, systemMetrics, usageLimits, resumableSessions, connected, send } = useWebSocket(WS_URL, stableOnRaw);
+  const { agents, events, completedSessions, stats, systemMetrics, usageLimits, connected, send } = useWebSocket(WS_URL, stableOnRaw);
 
   // Resource alert: fires when CPU or memory stays above the configured threshold for
   // `sustainSeconds`. After dismiss we apply a 30s cooldown to avoid spam loops.
@@ -307,6 +336,8 @@ export default function App() {
   useEffect(() => {
     if (backendCheckedRef.current) return;
     if (!getSettings().backend.checkOnStartup) return;
+    // The onboarding runs the same checks step by step; no second alert on top of it.
+    if (!isOnboardingDone()) return;
     backendCheckedRef.current = true;
     let cancelled = false;
     void checkBackendHealth()
@@ -393,13 +424,13 @@ export default function App() {
       tabId: string;
       cwd?: string;
       skipPermissions?: boolean;
-      mode: 'claude' | 'shell';
+      mode: 'claude' | 'codex' | 'shell';
       source: 'local' | 'ssh';
       initialCommand?: string;
-      claudeVariant?: 'claude' | 'agents';
       claudeSessionId?: string;
       resumeSessionId?: string;
       displayName?: string;
+      localModel?: boolean;
     }) => {
       send({
         type: 'terminal:spawn',
@@ -409,10 +440,10 @@ export default function App() {
         mode: req.mode,
         source: req.source,
         initialCommand: req.initialCommand,
-        claudeVariant: req.claudeVariant,
         claudeSessionId: req.claudeSessionId,
         resumeSessionId: req.resumeSessionId,
         displayName: req.displayName,
+        ...(req.localModel ? { localModel: true } : {}),
       });
     },
     [send],
@@ -451,7 +482,7 @@ export default function App() {
   // Left insets for everything positioned against the viewport. Both sidebars
   // answer to the header's single left-panel toggle, so one flag drives all of
   // them — see state/layoutInsets.ts for the widths.
-  const insets = layoutInsets(leftPanelOpen);
+  const insets = layoutInsets(leftPanelOpen, viewMode);
   const listLeftInset = insets.list;
 
   // When Ticket Management deep-links "view the process in the session", we switch to
@@ -473,6 +504,29 @@ export default function App() {
       return normalizedMode;
     });
   }, []);
+  // Header tab click. A fullscreen terminal would keep covering the chosen view, so it is
+  // minimised first; navigation from other surfaces goes through handleViewModeChange as-is.
+  const terminalModeRef = useRef<TerminalOverlayMode>(loadTerminalMode(browserStorage()));
+  const [terminalPanelMode, setTerminalPanelMode] = useState<TerminalOverlayMode>(() => terminalModeRef.current);
+  // Docked terminal size, reported by ChatOverlay; the tickets body leaves that room free.
+  const [terminalDockSize, setTerminalDockSize] = useState<{ bottomHeight?: number; rightWidth?: number }>({});
+  const ticketsDockInsets = terminalDockInsets(chatOpen, terminalPanelMode, terminalDockSize.bottomHeight, terminalDockSize.rightWidth);
+  const handleTerminalModeChange = useCallback((mode: TerminalOverlayMode) => {
+    terminalModeRef.current = mode;
+    setTerminalPanelMode(mode);
+  }, []);
+  // Header › Terminal › Window: place the panel and make sure it is showing.
+  const handleTerminalPanelPosition = useCallback((mode: TerminalOverlayMode) => {
+    window.dispatchEvent(new CustomEvent(TERMINAL_SET_MODE_EVENT, { detail: mode }));
+    setChatOpen(true);
+  }, []);
+  const chatOpenRef = useRef(chatOpen);
+  chatOpenRef.current = chatOpen;
+  const handleHeaderViewSelect = useCallback((mode: ViewMode) => {
+    if (shouldCollapseTerminalOnViewSelect(chatOpenRef.current, terminalModeRef.current, mode)) setChatOpen(false);
+    handleViewModeChange(mode);
+  }, [handleViewModeChange]);
+
   // Spread tile click → return to the prior (non-spread) view and focus that terminal.
   const handleSelectSpreadTile = useCallback((tabId: string) => {
     const back = prevViewRef.current === 'spread' ? 'animation' : prevViewRef.current;
@@ -548,6 +602,11 @@ export default function App() {
 
   const { tree: runTree } = useRunTree(true, subscribeRaw);
   const isPhone = useIsPhone();
+  // The phone marks a session running only if the PC's agent list (its sidebar) has it.
+  const liveSessions = useMemo(
+    () => (connected ? new Map(Array.from(agents.values(), (a) => [a.sessionId, a.state] as const)) : null),
+    [agents, connected],
+  );
   // Which checkout is a repository's main one, so selecting a repo alone can
   // still name a concrete folder for the ticket composer.
   const primaryWorktreeIds = useMemo(
@@ -564,8 +623,7 @@ export default function App() {
       const intent = (event as CustomEvent).detail as OpenRunIntent | undefined;
       if (!intent) return;
       if (intent.kind === 'ticket') {
-        // The board renders the focused ticket run itself; leaving it made the board unusable.
-        if (viewModeRef.current !== 'board') handleViewModeChange('tickets');
+        handleViewModeChange('tickets');
         return;
       }
       const detail = intent.kind === 'terminal'
@@ -580,14 +638,14 @@ export default function App() {
   // A phone gets its own screens rather than a squeezed dashboard: the sidebar
   // alone is 280px of a 390px viewport and the header controls sit past x=850,
   // so below 768px the desktop layout is not cramped, it is cut off.
-  if (isPhone) return <MobileApp subscribeRaw={subscribeRaw} connected={connected} send={send} />;
+  if (isPhone) return <MobileApp subscribeRaw={subscribeRaw} connected={connected} send={send} liveSessions={liveSessions} usageLimits={usageLimits} />;
 
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <HeaderBar
         viewMode={viewMode}
-        onViewModeChange={handleViewModeChange}
+        onViewModeChange={handleHeaderViewSelect}
         leftPanelOpen={leftPanelOpen}
         rightPanelOpen={rightPanelOpen}
         chatOpen={chatOpen}
@@ -597,8 +655,14 @@ export default function App() {
         onOpenSettings={() => setSettingsOpen(true)}
         systemMetrics={systemMetrics}
         usageLimits={usageLimits}
+        todoOpen={todoOpen}
+        onToggleTodo={() => toggleTodo()}
+        terminalPanelMode={terminalPanelMode}
+        onTerminalPanelPosition={handleTerminalPanelPosition}
       />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <FloatingTodo open={todoOpen} onClose={() => toggleTodo(false)} />
+      <OnboardingModal open={onboardingOpen} onClose={() => setOnboardingOpen(false)} />
       <ResourceAlert alert={resourceAlert} onDismiss={handleResourceAlertDismiss} />
       <BackendAlert
         alert={backendAlert}
@@ -610,7 +674,9 @@ export default function App() {
         {/* Sidebar + views share one row. ChatOverlay stays a sibling of this
             row so its absolute coordinates against the outer box are unchanged. */}
         <div style={{ position: 'absolute', inset: 0, display: 'flex' }}>
-        {leftPanelOpen && (
+        {/* One left sidebar per view: the repo/ticket tree, or (animation/list) the
+            session sidebar those views render themselves. Never both. */}
+        {leftPanelOpen && sidebarFor(viewMode) === 'repo' && (
           <RepoSidebar
             tree={runTree}
             selection={selection}
@@ -652,7 +718,6 @@ export default function App() {
                 onProjectNameChange={handleProjectNameChange}
                 selectedSessionId={selectedSessionId}
                 chatClaudeSessionIds={chatClaudeSessionIds}
-                resumableSessions={resumableSessions}
               />
             </Suspense>
           </div>
@@ -668,21 +733,18 @@ export default function App() {
           </div>
           {/* Spread view body: empty-state hint, shown only when there are no open terminals.
               When tabs exist, the app-level ChatOverlay spread grid (z-index 30) covers this. */}
-          <div style={{ position: 'absolute', inset: 0, display: viewMode === 'workspace' ? 'block' : 'none' }}>
-            <WorkspaceTreeView active={viewMode === 'workspace'} subscribeRaw={subscribeRaw} />
-          </div>
-          <div style={{ position: 'absolute', inset: 0, display: viewMode === 'tickets' ? 'block' : 'none' }}>
+          <div style={{ position: 'absolute', inset: 0, ...ticketsDockInsets, display: viewMode === 'tickets' ? 'block' : 'none' }}>
             <Suspense fallback={null}>
               <TicketsView
                 active={viewMode === 'tickets'}
-                boardActive={viewMode === 'board'}
                 subscribeRaw={subscribeRaw}
                 selection={selection}
                 runs={runTree.runs}
                 worktrees={runTree.worktrees}
                 repositories={runTree.repositories}
                 primaryWorktreeIds={primaryWorktreeIds}
-                leftInset={insets.repo}
+                leftInset={layoutInsets(leftPanelOpen, 'tickets').body}
+                activeFolders={projectPaths}
               />
             </Suspense>
           </div>
@@ -712,7 +774,7 @@ export default function App() {
           listViewActive={viewMode === 'list'}
           contentViewActive={viewMode === 'board'}
           listLeftInset={listLeftInset}
-          leftInset={insets.repo}
+          leftInset={insets.body}
           onSshSessionsChange={handleSshSessionsChange}
           onChatClaudeSessionsChange={handleChatClaudeSessionsChange}
           projectNames={projectNames}
@@ -721,6 +783,8 @@ export default function App() {
           onAttach={handleTerminalAttach}
           spreadActive={viewMode === 'spread'}
           onSelectSpreadTile={handleSelectSpreadTile}
+          onModeChange={handleTerminalModeChange}
+          onDockSizeChange={setTerminalDockSize}
         />
       </div>
     </div>

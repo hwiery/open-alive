@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildClaudeCommand } from '../claudeTerminal.js';
+import { buildClaudeCommand, resolveClaudeTui } from '../claudeTerminal.js';
 
 const UUID = '11111111-1111-4111-8111-111111111111';
 
@@ -30,6 +30,18 @@ describe('buildClaudeCommand', () => {
     it('ignores a non-UUID session id', () => {
       expect(buildClaudeCommand({ claudeSessionId: 'not-a-uuid' })).toBe('claude');
     });
+
+    it('overrides tui through --settings', () => {
+      expect(buildClaudeCommand({ tui: 'default' })).toBe(
+        `claude --settings '{"tui":"default"}'`,
+      );
+    });
+
+    it('quotes the --settings JSON for PowerShell', () => {
+      expect(buildClaudeCommand({ shell: 'powershell', tui: 'default' })).toBe(
+        `& 'claude' --settings '{"tui":"default"}'`,
+      );
+    });
   });
 
   describe("variant 'agents' (background agent manager)", () => {
@@ -59,5 +71,21 @@ describe('buildClaudeCommand', () => {
         buildClaudeCommand({ claudeVariant: 'agents', skipPermissions: true }),
       ).toBe('claude agents --dangerously-skip-permissions');
     });
+  });
+});
+
+describe('resolveClaudeTui', () => {
+  it("defaults to 'default' so dashboard terminals keep scrollback", () => {
+    expect(resolveClaudeTui({})).toBe('default');
+    expect(resolveClaudeTui({ OPEN_ALIVE_CLAUDE_TUI: ' ' })).toBe('default');
+  });
+
+  it('passes a plain value through', () => {
+    expect(resolveClaudeTui({ OPEN_ALIVE_CLAUDE_TUI: 'fullscreen' })).toBe('fullscreen');
+  });
+
+  it("returns null for 'inherit' or a value that isn't a plain word", () => {
+    expect(resolveClaudeTui({ OPEN_ALIVE_CLAUDE_TUI: 'inherit' })).toBeNull();
+    expect(resolveClaudeTui({ OPEN_ALIVE_CLAUDE_TUI: "x'; rm -rf ~" })).toBeNull();
   });
 });

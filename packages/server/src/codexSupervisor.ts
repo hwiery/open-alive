@@ -13,7 +13,8 @@
  * without a Codex install (§R.1); production supplies a real `spawn`.
  */
 
-import { spawn } from 'node:child_process';
+import crossSpawn from 'cross-spawn';
+import { resolveCli } from './spawnCli.js';
 import type { Readable, Writable } from 'node:stream';
 import type { CodexServerMessage } from '@open-alive/core';
 
@@ -50,11 +51,14 @@ export interface CodexSupervisor {
 
 function realProcess(options: CodexSupervisorOptions): CodexProcessHandle {
   // stdio is the default transport; `--stdio` is its documented alias.
-  const child = spawn('codex', ['app-server'], {
+  // cross-spawn: npm installs `codex` as a .cmd shim on Windows.
+  const bin = resolveCli('codex');
+  if (!bin) throw new Error('codex not found on PATH');
+  const child = crossSpawn(bin, ['app-server'], {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: options.env ?? process.env,
     cwd: options.cwd,
-  });
+  }) as unknown as import('node:child_process').ChildProcessWithoutNullStreams;
   return {
     stdin: child.stdin,
     stdout: child.stdout,

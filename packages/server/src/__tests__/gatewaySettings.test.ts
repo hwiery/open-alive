@@ -102,7 +102,7 @@ describe('createGatewaySettings', () => {
     expect(text).toContain('OPEN_ALIVE_PORT=4000');
     expect(text).toContain(`LITELLM_BASE_URL=${gatewayUrl}`);
     expect(text).toContain(`LITELLM_KEY=${SECRET}`);
-    expect(statSync(envFile).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(statSync(envFile).mode & 0o777).toBe(0o600);
   });
 
   it('keeps the stored key when apiKey is omitted and removes it when empty', async () => {
@@ -163,7 +163,7 @@ describe('createGatewaySettings', () => {
     const models = JSON.parse(readFileSync(modelsFile, 'utf-8')) as { defaultModel: string; models: Array<{ id: string }> };
     expect(models.defaultModel).toBe('m2');
     expect(models.models.map((m) => m.id)).toEqual(['m2', 'm1']);
-    expect(statSync(modelsFile).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(statSync(modelsFile).mode & 0o777).toBe(0o600);
     expect(result).toMatchObject({ defaultModel: 'm2', hasModelsFile: true });
   });
 

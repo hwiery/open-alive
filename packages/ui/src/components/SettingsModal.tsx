@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react';
 import { TerminalFontPreview } from './TerminalFontPreview.tsx';
 import { GatewaySettingsForm } from './GatewaySettingsForm.tsx';
+import { OPEN_ONBOARDING_EVENT } from './OnboardingModal.tsx';
+import { AccessSettingsCard } from './AccessSettingsCard.tsx';
+import { MobileSettingsPanel } from './MobileSettingsPanel.tsx';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import {
   useSettings,
   setSettings,
   TERMINAL_THEMES,
+  AUTO_TERMINAL_THEME_ID,
+  resolveTerminalTheme,
   FONT_PRESETS,
   DEFAULT_SETTINGS,
   type CursorStyle,
@@ -14,6 +19,7 @@ import {
 import { playTestSound } from '../services/sound';
 import { BackendsPanel } from '../views/backends/BackendsView';
 import { TerminalColorEditor } from './TerminalColorEditor';
+import { useAppTheme } from '../services/appearance';
 
 interface SettingsModalProps {
   open: boolean;
@@ -23,7 +29,8 @@ interface SettingsModalProps {
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const { t } = useTranslation();
   const settings = useSettings();
-  const [tab, setTab] = useState<'sound' | 'terminal' | 'alerts' | 'backend'>('sound');
+  const appTheme = useAppTheme();
+  const [tab, setTab] = useState<'sound' | 'terminal' | 'alerts' | 'backend' | 'mobile'>('sound');
 
   useEffect(() => {
     if (!open) return;
@@ -120,6 +127,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             onClick={() => setTab('backend')}
             label={t('settings.tabs.backend', { defaultValue: 'Backend' })}
           />
+          <TabButton
+            active={tab === 'mobile'}
+            onClick={() => setTab('mobile')}
+            label={t('settings.mobile.tab')}
+          />
         </div>
 
         {/* Body */}
@@ -204,12 +216,20 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                     // A new preset is a fresh starting point — drop custom colours from the old one.
                     setSettings(prev => ({ ...prev, terminal: { ...prev.terminal, themeId, colorOverrides: {} } }))
                   }
-                  options={TERMINAL_THEMES.map(t => ({
-                    value: t.id,
-                    label: t.label,
-                    swatch: t.theme.background === 'transparent' ? undefined : t.theme.background,
-                    accent: t.theme.cursor,
-                  }))}
+                  options={[
+                    {
+                      value: AUTO_TERMINAL_THEME_ID,
+                      label: t('settings.terminal.themeAuto'),
+                      swatch: resolveTerminalTheme(AUTO_TERMINAL_THEME_ID, {}, appTheme).background,
+                      accent: resolveTerminalTheme(AUTO_TERMINAL_THEME_ID, {}, appTheme).cursor,
+                    },
+                    ...TERMINAL_THEMES.map(p => ({
+                      value: p.id,
+                      label: p.label,
+                      swatch: p.theme.background === 'transparent' ? undefined : p.theme.background,
+                      accent: p.theme.cursor,
+                    })),
+                  ]}
                 />
               </FieldRow>
 
@@ -395,6 +415,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             </>
           )}
 
+          {tab === 'mobile' && <MobileSettingsPanel active={tab === 'mobile'} />}
+
           {tab === 'backend' && (
             <>
               <ToggleRow
@@ -417,8 +439,27 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 }
               />
               <div style={{ height: 1, background: 'var(--border-color)', margin: '4px 0' }} />
-              <GatewaySettingsForm active={tab === 'backend'} />
-              <BackendsPanel active={tab === 'backend'} />
+              <BackendsPanel
+                active={tab === 'backend'}
+                gatewaySlot={<GatewaySettingsForm active={tab === 'backend'} />}
+              />
+              <AccessSettingsCard active={tab === 'backend'} />
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent(OPEN_ONBOARDING_EVENT))}
+                style={{
+                  alignSelf: 'flex-start',
+                  padding: '6px 12px',
+                  background: 'transparent',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 8,
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                }}
+              >
+                {t('onboarding.reopen')}
+              </button>
             </>
           )}
         </div>

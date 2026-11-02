@@ -1,10 +1,13 @@
 import { useTranslation } from 'react-i18next';
 import {
   TERMINAL_COLOR_KEYS,
+  displayTerminalTheme,
+  effectiveTerminalBackground,
   resolveTerminalTheme,
   type TerminalColorKey,
   type TerminalColorOverrides,
 } from '../services/settings';
+import { useAppTheme } from '../services/appearance';
 
 interface TerminalColorEditorProps {
   themeId: string;
@@ -18,7 +21,8 @@ interface TerminalColorEditorProps {
  */
 export function TerminalColorEditor({ themeId, overrides, onChange }: TerminalColorEditorProps) {
   const { t } = useTranslation();
-  const theme = resolveTerminalTheme(themeId, overrides);
+  const appTheme = useAppTheme();
+  const theme = resolveTerminalTheme(themeId, overrides, appTheme);
   const hasOverrides = Object.keys(overrides).length > 0;
 
   const setSlot = (key: TerminalColorKey, color: string) => onChange({ ...overrides, [key]: color });
@@ -31,7 +35,8 @@ export function TerminalColorEditor({ themeId, overrides, onChange }: TerminalCo
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 6 }}>
         {TERMINAL_COLOR_KEYS.map(key => {
           const overridden = key in overrides;
-          const value = theme[key];
+          // A transparent background has no hex; show the backdrop it sits on.
+          const value = key === 'background' ? effectiveTerminalBackground(theme, appTheme) : theme[key];
           return (
             <div
               key={key}
@@ -81,12 +86,13 @@ const PREVIEW_KEYS: TerminalColorKey[] = ['red', 'green', 'yellow', 'blue', 'mag
 
 function TerminalPreview({ themeId, overrides }: Omit<TerminalColorEditorProps, 'onChange'>) {
   const { t } = useTranslation();
-  const theme = resolveTerminalTheme(themeId, overrides);
+  const appTheme = useAppTheme();
+  const theme = displayTerminalTheme(resolveTerminalTheme(themeId, overrides, appTheme), appTheme);
   return (
     <div
       style={{
         padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)',
-        background: theme.background === 'transparent' ? 'var(--bg-primary)' : theme.background,
+        background: effectiveTerminalBackground(theme, appTheme),
         color: theme.foreground, fontFamily: 'var(--font-mono)', fontSize: 12, lineHeight: 1.6,
       }}
     >

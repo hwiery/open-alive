@@ -41,15 +41,15 @@ export function AgentNode({ agent, character, onClick }: AgentNodeProps) {
         alignItems: 'center',
         gap: 10,
         padding: '10px 14px',
-        background: 'rgba(22, 27, 34, 0.9)',
+        background: 'var(--frame-bg)',
         border: `2px solid ${borderColor}`,
         borderRadius: 12,
         cursor: 'pointer',
         minWidth: 140,
         transition: 'all 0.2s ease',
       }}
-      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(33, 38, 45, 0.95)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
-      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(22, 27, 34, 0.9)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'var(--frame-bg-solid)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'var(--frame-bg)'; e.currentTarget.style.transform = 'translateY(0)'; }}
     >
       {spriteUrl && (
         <img

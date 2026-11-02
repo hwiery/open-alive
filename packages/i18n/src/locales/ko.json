@@ -8,7 +8,13 @@
     "toggleChat": "채팅 토글",
     "openSettings": "설정",
     "usageResetsIn": "{{time}} 후 초기화",
-    "usageStale": "마지막 확인 값"
+    "usageProvider": {
+      "claude": "Claude 사용량",
+      "codex": "Codex 사용량"
+    },
+    "usageObservedAt": "기준: {{time}} (마지막 Codex 실행)",
+    "usageFailed": "사용량 가져오지 못함",
+    "usageLastFetched": "마지막 조회: {{time}}"
   },
   "settings": {
     "title": "설정",
@@ -37,6 +43,7 @@
     },
     "terminal": {
       "theme": "컬러 테마",
+      "themeAuto": "앱 테마 따르기",
       "font": "글꼴",
       "fontSize": "글자 크기",
       "lineHeight": "줄 간격",
@@ -97,15 +104,15 @@
       "alertOnFailure": "연결 실패 시 알림",
       "checkAll": "모두 확인",
       "gateway": {
-        "title": "LLM 게이트웨이 (선택)",
-        "hint": "LiteLLM, OpenRouter, Ollama, vLLM 등 OpenAI 호환 엔드포인트를 연결하면 서브에이전트 위임과 멀티모델 리뷰를 쓸 수 있습니다. ~/.open-alive/.env 에 저장되고 재시작 없이 적용됩니다.",
+        "title": "추가 API (선택)",
+        "hint": "Claude 외에 쓸 OpenAI 호환 API 를 직접 연결합니다 — LiteLLM, OpenRouter, OmniRoute, Ollama, vLLM 등 어떤 엔드포인트든 주소와 키를 입력하면 됩니다. 연결하면 서브에이전트 위임과 멀티모델 리뷰에 쓰입니다. ~/.open-alive/.env 에 저장되고 재시작 없이 적용됩니다.",
         "statusConnected": "연결됨",
         "statusOff": "연결 안 됨",
         "custom": "직접 입력",
         "baseUrl": "기본 URL (/v1 제외)",
         "apiKey": "API 키",
         "apiKeyKeep": "저장된 키 {{hint}} — 비워두면 유지",
-        "apiKeyOptional": "Ollama 처럼 키가 없는 게이트웨이는 비워두세요",
+        "apiKeyOptional": "키가 필요 없는 엔드포인트면 비워두세요",
         "test": "연결 테스트",
         "testing": "테스트 중…",
         "testFailed": "게이트웨이가 응답하지 않습니다",
@@ -120,13 +127,110 @@
         "disconnected": "게이트웨이 연결을 해제했습니다",
         "localOnly": "게이트웨이는 이 컴퓨터에서만 변경할 수 있습니다 (원격 기기는 읽기 전용).",
         "unavailable": "이 서버 버전은 대시보드에서 게이트웨이를 설정할 수 없습니다. \"open-alive setup\" 을 실행하세요.",
-        "savedWithoutModels": "게이트웨이는 저장했지만 모델 목록은 저장하지 못했습니다: {{error}}"
+        "savedWithoutModels": "게이트웨이는 저장했지만 모델 목록은 저장하지 못했습니다: {{error}}",
+        "baseUrlPlaceholder": "게이트웨이 주소 입력 (예: https://your-gateway.example.com)",
+        "baseUrlExample": "주소 입력 — 보통 {{example}}",
+        "apiKeyRequired": "이 서비스에서 발급한 API 키 입력"
       }
     },
     "notifications": {
       "title": "알림",
       "toasts": "토스트 알림",
       "toastsHint": "에이전트 완료·응답 필요·오류 시 화면 안에 팝업을 띄웁니다"
+    },
+    "access": {
+      "title": "접속 보안",
+      "requireTokenLocally": "이 컴퓨터에서 접속할 때도 토큰 요구",
+      "hintRemoteOff": "원격 접속이 꺼져 있어 이 컴퓨터에서는 토큰을 묻지 않습니다. 토큰은 원격 접속(OPEN_ALIVE_REMOTE=1)을 켰을 때만 필요합니다.",
+      "hintRequired": "원격 접속이 켜져 있습니다. 이 컴퓨터에서도 토큰을 입력해야 접속됩니다(기본값, 가장 안전).",
+      "hintTrusted": "이 컴퓨터(127.0.0.1)에서는 토큰 없이 접속합니다. 다른 기기는 계속 토큰이 필요합니다.",
+      "warning": "주의: 터널·리버스 프록시가 이 포트로 연결되어 있으면 외부 접속도 이 컴퓨터로 보여 토큰 없이 들어올 수 있습니다. 그런 구성이 없을 때만 끄세요.",
+      "localOnly": "이 설정은 이 컴퓨터에서만 바꿀 수 있습니다.",
+      "unavailable": "접속 설정을 불러오지 못했습니다.",
+      "saveFailed": "접속 설정을 저장하지 못했습니다."
+    },
+    "mobile": {
+      "tab": "모바일 연결",
+      "loading": "불러오는 중…",
+      "intro": "핸드폰에서 이 대시보드를 쓰려면 아래 4단계를 순서대로 진행하세요. Tailscale 은 이 컴퓨터와 핸드폰을 나만의 사설망으로 묶어 주는 무료 앱이라, 공유기 포트를 열지 않고도 안전하게 연결됩니다.",
+      "recheck": "다시 확인",
+      "copy": "복사",
+      "copied": "복사됨",
+      "remove": "제거",
+      "save": "저장",
+      "unsaved": "저장하지 않은 변경이 있습니다",
+      "restartRequired": "저장한 설정은 서버를 다시 시작해야 적용됩니다.",
+      "restartNow": "지금 재시작",
+      "restarting": "재시작 중… (약 10초)",
+      "step1": {
+        "title": "Tailscale 설치·로그인 (이 컴퓨터와 핸드폰)",
+        "body": "두 기기에 Tailscale 을 설치하고 같은 계정으로 로그인하면, 핸드폰이 어디에 있든 100.x.x.x 주소로 이 컴퓨터에 닿습니다.",
+        "installHere": "이 컴퓨터에 설치:",
+        "installPhone": "핸드폰에 설치:",
+        "allPlatforms": "전체 다운로드",
+        "mac": "macOS",
+        "windows": "Windows",
+        "ios": "iPhone (App Store)",
+        "android": "Android (Google Play)",
+        "sameAccount": "두 기기 모두 같은 계정(Google·Apple·GitHub 등)으로 로그인하고 연결(Connect)을 켭니다.",
+        "checkDevices": "두 기기가 함께 보이는지 확인:",
+        "adminConsole": "Tailscale 기기 목록",
+        "state": {
+          "missing": "이 컴퓨터에 미설치",
+          "loggedOut": "설치됨 · 로그인/연결 필요",
+          "ok": "연결됨 · {{ip}}"
+        }
+      },
+      "step2": {
+        "title": "기기 토큰 만들기",
+        "body": "핸드폰이 이 대시보드에 들어올 때 쓰는 열쇠입니다. 기기마다 하나씩 만들고, 잃어버리면 그 토큰만 폐기하면 됩니다. 토큰 값은 만들 때 한 번만 보여 줍니다.",
+        "count": "{{count}}개",
+        "labelField": "토큰 이름",
+        "labelPlaceholder": "예: phone, ipad",
+        "create": "토큰 만들기",
+        "revoke": "폐기",
+        "confirmRevoke": "'{{name}}' 토큰을 폐기할까요? 이 토큰을 쓰는 기기는 즉시 접속이 끊깁니다.",
+        "freshTitle": "'{{name}}' 토큰이 만들어졌습니다",
+        "qrAlt": "토큰이 포함된 접속 QR",
+        "qrHint": "원격 접속을 켠 뒤 핸드폰 카메라로 이 QR 을 찍으면 토큰 입력 없이 바로 로그인됩니다. 다른 사람에게 보이지 않게 하세요.",
+        "onceWarning": "이 값은 지금만 볼 수 있습니다. 확인을 누르면 다시 볼 수 없으니, 필요하면 복사해 두세요.",
+        "done": "확인했어요"
+      },
+      "step3": {
+        "title": "원격 접속 켜기",
+        "body": "원격 접속을 켜면 토큰이 있는 기기만 들어올 수 있고, 허용된 기능(티켓 보기·만들기 등)만 쓸 수 있습니다.",
+        "on": "켜짐",
+        "off": "꺼짐",
+        "enable": "원격 접속 사용 (OPEN_ALIVE_REMOTE)",
+        "roots": "핸드폰에서 만든 티켓이 실행될 수 있는 폴더",
+        "rootsHint": "이 폴더 아래에서만 원격 티켓이 실행됩니다. 넓게 잡을수록 토큰이 샐 때 위험도 커집니다.",
+        "addRoot": "폴더 추가",
+        "bind": "접속을 받을 주소",
+        "bind_all": "모든 주소 (권장)",
+        "bind_allHint": "이 컴퓨터는 localhost, 핸드폰은 Tailscale 주소로 접속. 같은 와이파이에서도 포트가 보이지만 토큰 없이는 아무것도 못 합니다.",
+        "bind_tailscale": "Tailscale 주소만 ({{ip}})",
+        "bind_tailscaleHint": "Tailscale 망에서만 접속. 이 컴퓨터에서도 localhost 대신 Tailscale 주소로 열어야 하고, Tailscale 이 꺼져 있으면 서버가 뜨지 않습니다.",
+        "terminal": "핸드폰에서 터미널 사용",
+        "terminal_off": "끔 — 티켓만 (권장)",
+        "terminal_watch": "보기 — 세션·대화·터미널 출력 읽기",
+        "terminal_input": "입력 — 열린 터미널에 입력",
+        "terminal_shell": "셸 — 터미널 열기·닫기까지",
+        "terminalRisk_watch": "토큰이 새면 코드와 프롬프트를 읽을 수 있습니다.",
+        "terminalRisk_input": "토큰이 새면 이 컴퓨터에서 명령을 실행할 수 있습니다.",
+        "terminalRisk_shell": "토큰이 새면 이 컴퓨터의 셸을 그대로 쓸 수 있습니다."
+      },
+      "step4": {
+        "title": "핸드폰에서 열기",
+        "noAddress": "주소 없음",
+        "needRemote": "3단계에서 원격 접속을 켜고 서버를 재시작하면 접속 주소가 나타납니다.",
+        "needTailscale": "이 컴퓨터의 Tailscale 이 연결되면 접속 주소가 나타납니다 (1단계).",
+        "qrAlt": "접속 주소 QR",
+        "s1": "핸드폰에서 Tailscale 앱을 열고 연결을 켭니다.",
+        "s2": "카메라로 QR 을 찍거나, 브라우저에 위 주소를 입력합니다.",
+        "s3": "토큰을 묻는 화면이 나오면 2단계에서 만든 토큰을 붙여넣습니다. (토큰 QR 로 열었다면 자동)",
+        "s4": "브라우저 메뉴의 '홈 화면에 추가'로 앱처럼 쓸 수 있습니다.",
+        "useTailscaleAddress": "반드시 100.x 로 시작하는 Tailscale 주소로 여세요. 와이파이 내부 IP 로 열면 토큰이 암호화되지 않은 채 전송됩니다."
+      }
     }
   },
   "alert": {
@@ -230,7 +334,8 @@
     "justNow": "방금",
     "secondsAgo": "{{count}}초 전",
     "minutesAgo": "{{count}}분 전",
-    "hoursAgo": "{{count}}시간 전"
+    "hoursAgo": "{{count}}시간 전",
+    "daysAgo": "{{count}}일 전"
   },
   "completionLog": {
     "title": "완료된 세션",
@@ -244,83 +349,10 @@
     "placeholder": "메모 입력 후 Enter로 저장",
     "empty": "아직 항목이 없습니다",
     "remove": "제거",
-    "confirmRemove": "이 항목을 제거하시겠습니까?"
-  },
-  "efficio": {
-    "title": "Efficio — 크기보정 낭비",
-    "refresh": "새로고침",
-    "loading": "불러오는 중…",
-    "empty": "아직 efficio 데이터가 없습니다. 과거 세션을 채점하려면 수집기를 실행하세요:",
-    "noData": "범위 내 세션 없음",
-    "sessions": "세션 {{count}}개",
-    "lastUpdated": "마지막 수집",
-    "percentile": "낭비 백분위",
-    "axis": {
-      "w2": "컨텍스트 재무효화",
-      "wc": "편집 반복",
-      "bash": "Bash 시행착오",
-      "w3": "재탐색"
-    },
-    "status": {
-      "subj": "주관검증 (H1)",
-      "obj-weak": "객관 약상관",
-      "none": "미검증 (실험축)"
-    },
-    "view": {
-      "subtitle": "세션별 크기보정 낭비 신호 (0 토큰·결정론적)",
-      "caveat": "낭비는 2차원(MTMM): 체감(W2)·행동(WC/Bash) 축이 갈리며 때로 반대. 어느 게 '진짜 낭비'인지는 가치판단. 방향 타당성 미측정.",
-      "model": "기준모델 v{{version}}",
-      "last": "최근 {{count}}세션",
-      "tab": {
-        "sessions": "세션",
-        "scatter": "크기 vs 잔차",
-        "timeline": "다축 시계열",
-        "distribution": "분포",
-        "candidates": "개선 후보",
-        "reports": "리포트"
-      },
-      "scatterX": "세션 크기 (토큰)",
-      "scatterY": "잔차 (크기보정)",
-      "scatterHint": "회귀선 위 = 크기 예상보다 낭비 많음",
-      "distHint": "내 코퍼스에서 각 세션의 위치",
-      "actual": "실제",
-      "expected": "예상",
-      "residual": "잔차",
-      "turns": "{{count}}턴",
-      "tokens": "{{value}} tok",
-      "noSignal": "신호 없음",
-      "selectSession": "세션을 클릭하면 4축 상세",
-      "count": "세션 {{count}}개",
-      "candHint": "백분위(평가)가 아니라 실제로 반복한 명령/파일입니다. 여러 세션에 걸쳐 반복될수록 CLAUDE.md 규칙 후보 가치가 큽니다.",
-      "candBash": "반복된 Bash 명령",
-      "candEdits": "반복 편집한 파일",
-      "candNone": "범위 내 반복 없음",
-      "candSessions": "{{count}}개 세션",
-      "candAcross": "{{sessions}}개 세션에서 총 {{total}}회 반복",
-      "repeats": "이 세션의 반복"
-    },
-    "cluster": {
-      "perceived": "체감",
-      "behavioral": "행동"
-    },
-    "report": {
-      "noData": "범위 내 데이터 없음",
-      "nSessions": "{{count}}개 세션",
-      "trendTitle": "추세",
-      "trendDesc": "최근 세션들의 낭비 백분위 선형 추세(선택 축 기준). 상승은 악화를 뜻함.",
-      "trendRising": "상승 +{{slope}}/세션",
-      "trendFalling": "하락 -{{slope}}/세션",
-      "trendFlat": "평탄",
-      "trendAlert": "악화 중",
-      "projectTitle": "프로젝트별",
-      "projectDesc": "프로젝트별 평균 낭비 백분위 — 크기 대비 어느 프로젝트가 비효율적인지.",
-      "cacheTitle": "캐시 효율",
-      "cacheDesc": "캐시 재사용 = read / (read + creation). 높을수록 컨텍스트를 재무효화 않고 재사용.",
-      "cacheReuse": "read {{read}} · 생성 {{creation}} ({{count}}개 세션)",
-      "weeklyTitle": "주간 요약",
-      "weeklyDesc": "주별 평균 낭비와 해당 주 낭비 상위 세션.",
-      "weekAvg": "평균 {{pct}}%"
-    }
+    "confirmRemove": "이 항목을 제거하시겠습니까?",
+    "close": "할 일 닫기",
+    "dragHint": "제목 줄을 끌어 위치를 옮길 수 있습니다",
+    "open": "할 일"
   },
   "pixelOffice": {
     "title": "픽셀 오피스"
@@ -374,19 +406,27 @@
     "customPathHint": "경로를 입력하고 Enter를 누르거나, 위의 프로젝트를 선택하세요",
     "skipPermissions": "권한 건너뛰기 (--dangerously-skip-permissions)",
     "skipPermissionsWarning": "Claude가 권한 요청 없이 모든 도구를 실행합니다.",
+    "noActiveProjects": "활성 프로젝트 없음",
+    "launch": {
+      "label": "시작할 에이전트",
+      "claude": "Claude",
+      "claude-skip": "Claude · 권한 건너뛰기",
+      "codex": "Codex",
+      "codex-skip": "Codex · 권한 건너뛰기",
+      "codex-local": "Codex · 로컬 {{model}}",
+      "codex-local-skip": "Codex · 로컬 {{model}} · 권한 건너뛰기",
+      "codexSkipWarning": "Codex가 승인·샌드박스 없이 모든 명령을 실행합니다 (--dangerously-bypass-approvals-and-sandbox)."
+    },
     "modePopup": "팝업",
     "modeBottom": "하단",
     "modeRight": "우측",
     "modeFullscreen": "전체화면",
-    "modeFullscreenDisabled": "프롬프트/Efficio 뷰에서는 전체화면을 쓸 수 없습니다",
     "selectHere": "선택",
     "tabLocal": "로컬 폴더",
     "tabSsh": "SSH 원격",
     "quickSelect": "빠른 선택",
     "browseSection": "탐색",
     "startHere": "이 폴더에서 시작",
-    "variantClaudeHint": "표준 `claude` CLI 실행",
-    "variantAgentsHint": "`claude agents` 실행",
     "emptyDir": "하위 폴더 없음",
     "collapse": "최소화",
     "closeDialog": "닫기",
@@ -446,7 +486,10 @@
       "message": "이 세션이 다른 터미널에서 아직 실행 중일 수 있습니다. 재개하면 같은 트랜스크립트에 동시에 기록하는 사본이 하나 더 열려 기록이 손상될 수 있습니다. 원본이 더 이상 실행 중이 아님이 확실할 때만 계속하세요.",
       "cancel": "취소",
       "confirm": "그래도 재개"
-    }
+    },
+    "closeTab": "터미널 닫기",
+    "positionLabel": "터미널 위치",
+    "dragHint": "제목 줄을 좌우로 끌어 위치를 옮길 수 있습니다"
   },
   "chat": {
     "title": "Chat",
@@ -457,21 +500,21 @@
   },
   "viewMode": {
     "label": "뷰 모드",
-    "groupMonitor": "모니터링",
-    "groupTools": "도구",
-    "animation": "애니메이션",
-    "list": "리스트",
     "prompt": "프롬프트",
-    "efficio": "Efficio",
     "tickets": "티켓",
-    "spread": "스프레드",
     "jarvis": "자비스",
-    "workspace": "워크스페이스",
-    "board": "보드",
     "data": "데이터",
     "archive": "세션 관리",
     "ticketMgmt": "티켓 관리",
-    "backends": "백엔드 연결"
+    "backends": "백엔드 연결",
+    "cost": "비용",
+    "terminal": "터미널",
+    "layout": {
+      "label": "터미널 배치",
+      "window": "창",
+      "split": "분할",
+      "full": "전체"
+    }
   },
   "board": {
     "tab": {
@@ -559,7 +602,7 @@
   },
   "backends": {
     "title": "백엔드 연결",
-    "subtitle": "오케스트레이터(Claude)와 위임 대상 서브에이전트를 연결하고 상태를 확인합니다.",
+    "subtitle": "Claude 연결이 기본이며 가장 먼저 확인합니다. 추가 API 와 SSH 호스트는 선택입니다.",
     "loading": "불러오는 중…",
     "check": "연결 확인",
     "checking": "확인 중…",
@@ -577,7 +620,14 @@
     "sshHost": "호스트 (예: 192.0.2.20)",
     "sshUser": "사용자 (예: dev)",
     "sshAdd": "호스트 추가",
-    "remove": "삭제"
+    "remove": "삭제",
+    "required": "필수",
+    "label": {
+      "claude-local": "Claude Code",
+      "litellm": "추가 API",
+      "ssh": "SSH 호스트",
+      "codex-local": "Codex (선택)"
+    }
   },
   "tickets": {
     "heroPrompt": "무엇을 해결할까요?",
@@ -587,7 +637,6 @@
     "location": "실행 위치",
     "locationLocal": "로컬",
     "remotePickerTitle": "원격 폴더 선택",
-    "remotePathPlaceholder": "원격 경로, 예: /home/dev/project",
     "pickerTitle": "프로젝트 폴더 선택",
     "useThisFolder": "이 폴더로 지정",
     "create": "맡기기",
@@ -790,7 +839,20 @@
     "panelOffLabel": "패널 미사용 — 로컬 게이트 단독",
     "runsOn": "{{target}} 에서 SSH로 실행",
     "createFailed": "티켓을 만들지 못했습니다 (HTTP {{status}})",
-    "createNetworkError": "서버에 연결할 수 없습니다 — 서버가 실행 중인가요?"
+    "createNetworkError": "서버에 연결할 수 없습니다 — 서버가 실행 중인가요?",
+    "model": {
+      "label": "모델",
+      "effortUnsupported": "선택한 모델이 이 강도를 지원하지 않아 모델 기본값으로 실행됩니다",
+      "codexLocalOnly": "Codex 모델은 이 컴퓨터에서만 실행할 수 있습니다. 위치를 로컬로 바꾸거나 Claude 모델을 고르세요.",
+      "group": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "other": "기타"
+      },
+      "none": "식별된 모델 없음"
+    },
+    "remotePathPlaceholder": "원격 경로, 예: /home/dev/project",
+    "options": "옵션"
   },
   "spread": {
     "empty": "열린 터미널이 없습니다",
@@ -888,25 +950,6 @@
     "listening": "듣고 있어요!",
     "done": "작업 끝! 수고하셨습니다~",
     "idle": "작업완료 후 대기중"
-  },
-  "dashboard": {
-    "title": "세션",
-    "subtitle": "실행 중이거나 재개 가능한 Claude 세션. 카드를 클릭해 열기·포커스·재개하세요.",
-    "empty": "아직 세션이 없습니다. 사이드바에서 새 채팅을 시작하세요.",
-    "section": {
-      "live": "실행 중 · {{n}}",
-      "dormant": "재개 가능 · {{n}}"
-    },
-    "action": {
-      "focus": "열기",
-      "resume": "재개"
-    },
-    "time": {
-      "now": "방금",
-      "minutesAgo": "{{n}}분 전",
-      "hoursAgo": "{{n}}시간 전",
-      "daysAgo": "{{n}}일 전"
-    }
   },
   "workspaceTree": {
     "loading": "워크스페이스를 불러오는 중…",
@@ -1135,7 +1178,7 @@
     "body": "이 서버는 토큰을 요구합니다. `open-alive token new` 로 발급한 기기 토큰을 붙여넣거나, `open-alive start` 로 대시보드를 다시 여세요.",
     "placeholder": "기기 토큰",
     "submit": "연결",
-    "invalid": "토큰이 거부되었습니다. 다시 확인해 주세요."
+    "invalid": "토큰 형식이 아닙니다. 영문·숫자·-·_ 로 된 토큰 값만 붙여넣으세요 (공백·이름 제외)."
   },
   "mobile": {
     "listTitle": "티켓",
@@ -1166,12 +1209,26 @@
     "tabTickets": "티켓",
     "tabSessions": "세션",
     "sessionsEmpty": "실행 중인 세션이 없습니다",
+    "sessionsError": "세션 목록을 불러오지 못했습니다 ({{detail}}). PC 의 ~/.open-alive/server.log 를 확인하세요.",
+    "endedSection": "종료된 세션 {{count}}",
+    "sessionStatus": {
+      "approval": "승인 필요",
+      "waiting": "입력 대기",
+      "error": "오류",
+      "working": "작업 중",
+      "starting": "시작 중",
+      "idle": "대기 중",
+      "ended": "종료됨"
+    },
     "sessionsLoading": "불러오는 중…",
     "conversationEmpty": "아직 대화가 없습니다",
     "openTerminal": "터미널 열기",
     "terminalTitle": "터미널",
     "terminalInput": "명령 입력",
     "terminalSend": "전송",
+    "terminalZoom": "확대",
+    "terminalFit": "맞춤",
+    "terminalReattach": "다시 연결",
     "terminalNew": "새 터미널",
     "terminalAttaching": "연결 중…",
     "terminalGone": "이 터미널은 종료되었습니다",
@@ -1197,12 +1254,75 @@
     "home": "홈 — 티켓으로",
     "pullToRefresh": "당겨서 새로고침",
     "releaseToRefresh": "놓으면 새로고침",
-    "refreshing": "새로고침 중…"
+    "refreshing": "새로고침 중…",
+    "noProject": "(폴더 없음)",
+    "spawnModeLabel": "무엇을 실행할까요",
+    "spawnClaude": "Claude",
+    "spawnCodex": "Codex",
+    "spawnCodexLocal": "Codex · 로컬",
+    "spawnLocalModel": "로컬 모델: {{model}}",
+    "spawnShell": "셸",
+    "spawnRunning": "지금 실행 중인 폴더",
+    "spawnRecent": "최근 사용한 폴더",
+    "spawnAllowed": "허용된 폴더",
+    "spawnManual": "경로 직접 입력",
+    "spawnStart": "시작"
   },
   "appearance": {
     "toggle": "화면 모드: {{current}} (클릭 시 {{next}})",
     "dark": "다크",
     "light": "라이트",
     "system": "시스템 설정"
+  },
+  "onboarding": {
+    "title": "open-alive 시작하기",
+    "stepOf": "{{current}} / {{total}} 단계",
+    "skipAll": "나중에 하기",
+    "next": "다음",
+    "back": "이전",
+    "start": "시작하기",
+    "reopen": "연결 설정 다시 진행",
+    "claude": {
+      "title": "1. Claude Code 연결",
+      "hint": "티켓 실행과 검증은 이 컴퓨터의 Claude Code CLI 로 동작합니다. 연결을 확인하면 지금 사용할 수 있는 최신 모델도 함께 불러옵니다.",
+      "checking": "연결 확인 중…",
+      "recheck": "다시 확인",
+      "connected": "연결됨",
+      "failed": "Claude Code 에 연결하지 못했습니다",
+      "checkFailed": "확인 요청 실패 ({{status}})",
+      "models": "사용 가능한 최신 모델",
+      "installHint": "설치되어 있지 않다면 터미널에서 설치하세요:",
+      "loginHint": "설치 후 터미널에서 한 번 실행해 로그인한 뒤 '다시 확인'을 누르세요:",
+      "codexTitle": "Codex CLI (선택)",
+      "codexHint": "설치·로그인되어 있으면 티켓 모델로 Codex 모델도 고를 수 있습니다.",
+      "codexConnected": "Codex 사용 가능",
+      "codexMissing": "Codex 미설치 또는 미로그인 — 설치: npm install -g @openai/codex, 로그인: codex login"
+    },
+    "gateway": {
+      "title": "2. 추가 API 연결 (선택)",
+      "hint": "다른 모델에 작업을 나누거나 교차 검증하려면 사용하는 게이트웨이를 직접 입력하세요. 필요 없으면 건너뛰어도 됩니다.",
+      "next": "다음 (건너뛰기)"
+    },
+    "done": {
+      "title": "준비 완료",
+      "ready": "Claude Code 연결이 확인되었습니다. 티켓 화면에서 바로 작업을 맡길 수 있습니다.",
+      "claudeMissing": "Claude Code 연결이 아직 확인되지 않았습니다. 연결 전에는 티켓을 실행할 수 없습니다.",
+      "reopen": "설정 → 백엔드에서 언제든 다시 진행할 수 있습니다."
+    }
+  },
+  "models": {
+    "provider": {
+      "anthropic": "Anthropic",
+      "openai": "OpenAI",
+      "google": "Google",
+      "meta": "Meta",
+      "mistral": "Mistral AI",
+      "deepseek": "DeepSeek",
+      "xai": "xAI",
+      "qwen": "알리바바 Qwen",
+      "moonshot": "Moonshot AI",
+      "zhipu": "Zhipu AI",
+      "other": "기타 제공사"
+    }
   }
 }

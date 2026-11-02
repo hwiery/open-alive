@@ -5,6 +5,9 @@
  */
 import type { UsageLimitsSnapshot, UsageWindow } from '@open-alive/core';
 
+/** Subscription whose usage a header group shows. */
+export type UsageProvider = 'claude' | 'codex';
+
 /** How a window's countdown reads: `2h 30m` for the session, `3d 04h` weekly. */
 export type RemainingUnit = 'hm' | 'dh';
 
@@ -106,4 +109,52 @@ export function formatRemaining(
   }
   const hours = Math.floor(minutes / 60);
   return `${Math.floor(hours / 24)}d ${pad2(hours % 24)}h`;
+}
+
+/** One provider's compact usage: `5H 23% · 7D 41%`, details in the tooltip. */
+export interface UsageGroup {
+  provider: UsageProvider;
+  /** The 5-hour and weekly windows that were reported, in that order. */
+  windows: UsagePill[];
+  /** Model-scoped weekly windows (Claude: e.g. Fable) — tooltip only. */
+  scoped: UsagePill[];
+  /** Codex: when the numbers were observed (its last run). */
+  observedAt?: number;
+  /** The latest fetch failed: the chip says so, and the numbers are last-known (tooltip only). */
+  failed: boolean;
+  /** Claude: when the last-known numbers were fetched; absent when nothing ever was. */
+  fetchedAt?: number;
+}
+
+/**
+ * Header usage, one group per subscription. A provider whose latest fetch
+ * failed is kept even without windows, so the chip can say the fetch failed
+ * rather than show old numbers as current.
+ */
+export function toUsageGroups(snapshot: UsageLimitsSnapshot | null): UsageGroup[] {
+  if (!snapshot) return [];
+  const groups: UsageGroup[] = [];
+  const claudeWindows: UsagePill[] = [];
+  if (snapshot.fiveHour) claudeWindows.push(pill('5H', snapshot.fiveHour, 'hm', SESSION_COLOR, false));
+  if (snapshot.sevenDay) claudeWindows.push(pill('7D', snapshot.sevenDay, 'dh', WEEKLY_COLOR, false));
+  if (claudeWindows.length > 0 || snapshot.stale) {
+    groups.push({
+      provider: 'claude',
+      windows: claudeWindows,
+      scoped: snapshot.scopedWeekly.map((w) => pill(w.modelName.toUpperCase(), w, 'dh', SCOPED_COLOR, false)),
+      failed: snapshot.stale,
+      ...(snapshot.fetchedAt > 0 ? { fetchedAt: snapshot.fetchedAt } : {}),
+    });
+  }
+  const codex = snapshot.codex;
+  if (codex) {
+    const windows: UsagePill[] = [];
+    if (codex.fiveHour) windows.push(pill('5H', codex.fiveHour, 'hm', SESSION_COLOR, false));
+    if (codex.sevenDay) windows.push(pill('7D', codex.sevenDay, 'dh', WEEKLY_COLOR, false));
+    const failed = codex.stale === true;
+    if (windows.length > 0 || failed) {
+      groups.push({ provider: 'codex', windows, scoped: [], observedAt: codex.observedAt, failed });
+    }
+  }
+  return groups;
 }

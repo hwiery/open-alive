@@ -48,4 +48,20 @@ describe('MobileApp shell', () => {
     await screen.findByRole('button', { name: /홈|Home/ });
     expect(screen.queryByRole('tab', { name: /세션|Sessions/ })).not.toBeInTheDocument();
   });
+
+  it('shows Claude and Codex usage under the bar on the tickets tab, nothing before the first poll', async () => {
+    const usageLimits = {
+      fiveHour: { utilization: 0.23, resetsAt: null }, sevenDay: { utilization: 0.41, resetsAt: null },
+      scopedWeekly: [], fetchedAt: 0, stale: false,
+      codex: { fiveHour: null, sevenDay: { utilization: 0.13, resetsAt: null }, observedAt: Date.now() },
+    };
+    const { rerender } = render(<MobileApp subscribeRaw={noopSub} connected send={() => {}} />);
+    await screen.findByRole('button', { name: /홈|Home/ });
+    expect(screen.queryByTestId('usage-summary')).not.toBeInTheDocument();
+    rerender(<MobileApp subscribeRaw={noopSub} connected send={() => {}} usageLimits={usageLimits} />);
+    expect(screen.getByTestId('usage-claude').textContent).toContain('5H23%·7D41%');
+    expect(screen.getByTestId('usage-codex').textContent).toContain('7D13%');
+    fireEvent.click(await screen.findByRole('tab', { name: /세션|Sessions/ }));
+    await waitFor(() => expect(screen.queryByTestId('usage-summary')).not.toBeInTheDocument());
+  });
 });

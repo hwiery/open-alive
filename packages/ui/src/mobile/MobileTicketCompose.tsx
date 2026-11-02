@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { SshTarget, TicketLocation, TicketRunPreset } from '@open-alive/core';
-import { loadPresets, SSH_PRESETS_CHANGED } from '../views/chat/sshPresets.ts';
-import { RUN_PRESET_IDS, DEFAULT_RUN_PRESET } from '../views/tickets/runPresets.ts';
+import type { SshTarget, TicketLocation } from '@open-alive/core';
+import { loadPresets, presetTarget, SSH_PRESETS_CHANGED } from '../views/chat/sshPresets.ts';
+import { modelLabel } from '../views/tickets/runPresets.ts';
+import { EFFORT_LEVELS, type EffortLevel } from '../views/tickets/ModelPicker.tsx';
+import { useClaudeModels } from '../hooks/useClaudeModels.ts';
+import { useCodexModels } from '../hooks/useCodexModels.ts';
+import { ModelLogo } from '../components/ModelBadge.tsx';
 import { COLORS, screen, topBar, body, primaryButton, secondaryButton, actionBar, input, label } from './styles.ts';
 import { Panel, Badge } from './parts.tsx';
 import type { MobileProject, MobileCreateFn } from './types.ts';
@@ -95,7 +99,10 @@ export function MobileTicketCompose({ projects, onCancel, onCreate }: MobileTick
   const [cwd, setCwd] = useState(projects.length === 1 ? projects[0]!.path : '');
   const [remotePath, setRemotePath] = useState('');
   const [locId, setLocId] = useState('local');
-  const [preset, setPreset] = useState<TicketRunPreset>(DEFAULT_RUN_PRESET);
+  const claudeModels = useClaudeModels();
+  const codexModels = useCodexModels();
+  const [model, setModel] = useState('');
+  const [effort, setEffort] = useState<EffortLevel>('high');
   const [orchestrated, setOrchestrated] = useState(true);
   const [autoCommit, setAutoCommit] = useState(true);
   const [panelReview, setPanelReview] = useState(true);
@@ -104,9 +111,9 @@ export function MobileTicketCompose({ projects, onCancel, onCreate }: MobileTick
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [sshHosts, setSshHosts] = useState(() => loadPresets().filter((p) => p.host));
+  const [sshHosts, setSshHosts] = useState(() => loadPresets().flatMap((p) => { const target = presetTarget(p); return target ? [{ ...p, ...target }] : []; }));
   useEffect(() => {
-    const onChange = () => setSshHosts(loadPresets().filter((p) => p.host));
+    const onChange = () => setSshHosts(loadPresets().flatMap((p) => { const target = presetTarget(p); return target ? [{ ...p, ...target }] : []; }));
     window.addEventListener(SSH_PRESETS_CHANGED, onChange);
     return () => window.removeEventListener(SSH_PRESETS_CHANGED, onChange);
   }, []);
@@ -114,6 +121,15 @@ export function MobileTicketCompose({ projects, onCancel, onCreate }: MobileTick
   const host = useMemo(() => sshHosts.find((p) => p.id === locId), [sshHosts, locId]);
   const isRemote = locId !== 'local' && host !== undefined;
   const effectiveCwd = isRemote ? remotePath.trim() : cwd;
+  // Claude tiers always; Codex models only for a local run (Codex never runs over SSH).
+  const modelOptions = useMemo(
+    () => [
+      ...(['haiku', 'sonnet', 'opus', 'fable'] as const).map((tier) => ({ id: claudeModels[tier], label: modelLabel(claudeModels[tier]) ?? claudeModels[tier] })),
+      ...(isRemote ? [] : codexModels.filter((m) => m.listed).map((m) => ({ id: m.id, label: m.label }))),
+    ],
+    [claudeModels, codexModels, isRemote],
+  );
+  const chosenModel = modelOptions.some((m) => m.id === model) ? model : claudeModels.opus;
 
   // Branches come from the allowlisted endpoint, not a filesystem walk: a
   // device may not browse the disk, so this is the only branch source it has.
@@ -141,7 +157,7 @@ export function MobileTicketCompose({ projects, onCancel, onCreate }: MobileTick
     const location: TicketLocation | undefined =
       isRemote && host ? { kind: 'ssh', ssh: host as SshTarget, label: sshDisplay(host as SshTarget) } : undefined;
     const message = await onCreate({
-      goal: goal.trim(), cwd: effectiveCwd, location, orchestrated, preset, autoCommit, panelReview,
+      goal: goal.trim(), cwd: effectiveCwd, location, orchestrated, model: chosenModel, effort, autoCommit, panelReview,
     });
     setBusy(false);
     if (message) setError(message);
@@ -229,23 +245,47 @@ export function MobileTicketCompose({ projects, onCancel, onCreate }: MobileTick
         )}
 
         <div style={{ height: 18 }} />
-        <span style={label}>{t('tickets.presetLabel')}</span>
-        <div role="radiogroup" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {RUN_PRESET_IDS.map((id) => (
+        <span style={label}>{t('tickets.model.label')}</span>
+        <div role="radiogroup" aria-label={t('tickets.model.label')} style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {modelOptions.map((m) => (
             <button
-              key={id}
+              key={m.id}
               role="radio"
-              aria-checked={preset === id}
-              aria-label={t(`tickets.preset.${id}`)}
-              onClick={() => setPreset(id)}
+              aria-checked={chosenModel === m.id}
+              aria-label={m.label}
+              onClick={() => setModel(m.id)}
               style={{
-                ...secondaryButton, minHeight: 44, padding: '0 14px', fontSize: 14,
-                borderColor: preset === id ? COLORS.accent : COLORS.border,
-                background: preset === id ? COLORS.accent : 'transparent',
-                color: preset === id ? 'var(--on-accent)' : COLORS.text,
+                ...secondaryButton, minHeight: 44, padding: '0 12px', fontSize: 14,
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                borderColor: chosenModel === m.id ? COLORS.accent : COLORS.border,
+                background: chosenModel === m.id ? COLORS.accent : 'transparent',
+                color: chosenModel === m.id ? 'var(--on-accent)' : COLORS.text,
               }}
             >
-              {t(`tickets.preset.${id}`)}
+              <ModelLogo model={m.id} size={14} />
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ height: 18 }} />
+        <span style={label}>{t('tickets.presetLabel')}</span>
+        <div role="radiogroup" aria-label={t('tickets.presetLabel')} style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {EFFORT_LEVELS.map((e) => (
+            <button
+              key={e}
+              role="radio"
+              aria-checked={effort === e}
+              aria-label={e}
+              onClick={() => setEffort(e)}
+              style={{
+                ...secondaryButton, minHeight: 44, padding: '0 14px', fontSize: 14,
+                borderColor: effort === e ? COLORS.accent : COLORS.border,
+                background: effort === e ? COLORS.accent : 'transparent',
+                color: effort === e ? 'var(--on-accent)' : COLORS.text,
+              }}
+            >
+              {e}
             </button>
           ))}
         </div>

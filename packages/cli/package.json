@@ -13,9 +13,11 @@
   },
   "dependencies": {
     "@open-alive/core": "workspace:*",
-    "@open-alive/hooks": "workspace:*"
+    "@open-alive/hooks": "workspace:*",
+    "cross-spawn": "^7.0.6"
   },
   "devDependencies": {
+    "@types/cross-spawn": "^6.0.6",
     "@types/node": "^22"
   }
 }

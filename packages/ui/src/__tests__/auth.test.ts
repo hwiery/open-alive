@@ -43,6 +43,17 @@ describe('token storage', () => {
   });
 });
 
+describe('adoptUrlToken from the fragment', () => {
+  it('takes #token= (the mobile QR), stores it and strips it from the address bar', () => {
+    const storage = memoryStorage();
+    const replaced: string[] = [];
+    const history = { replaceState: (_s: unknown, _t: string, url: string) => replaced.push(url) } as unknown as History;
+    expect(adoptUrlToken({ search: '', pathname: '/', hash: '#token=abc_DEF-123' }, history, storage)).toBe('abc_DEF-123');
+    expect(storage.getItem(TOKEN_STORAGE_KEY)).toBe('abc_DEF-123');
+    expect(replaced).toEqual(['/']);
+  });
+});
+
 describe('adoptUrlToken', () => {
   it('stores the token from the URL and strips it from the address bar', () => {
     const storage = memoryStorage();
@@ -61,6 +72,24 @@ describe('adoptUrlToken', () => {
     const storage = memoryStorage({ [TOKEN_STORAGE_KEY]: 'kept' });
     adoptUrlToken({ search: '', pathname: '/', hash: '' }, { replaceState: vi.fn() } as unknown as History, storage);
     expect(readStoredToken(storage)).toBe('kept');
+  });
+});
+
+describe('malformed tokens', () => {
+  it('drops a stored value the WebSocket could not carry instead of crashing the app', async () => {
+    const { readStoredToken, wsProtocols, isValidToken } = await import('../lib/auth.ts');
+    const storage = memoryStorage({ [TOKEN_STORAGE_KEY]: '내 토큰 abc' });
+    expect(readStoredToken(storage)).toBeNull();
+    expect(storage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
+    expect(wsProtocols('has space')).toBeUndefined();
+    expect(isValidToken('Abc-123_x.y~')).toBe(true);
+  });
+
+  it('never stores a malformed token', async () => {
+    const { storeToken } = await import('../lib/auth.ts');
+    const storage = memoryStorage();
+    storeToken('phone: abc', storage);
+    expect(storage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
   });
 });
 

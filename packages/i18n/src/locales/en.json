@@ -8,7 +8,13 @@
     "toggleChat": "Toggle chat",
     "openSettings": "Settings",
     "usageResetsIn": "resets in {{time}}",
-    "usageStale": "last known value"
+    "usageProvider": {
+      "claude": "Claude usage",
+      "codex": "Codex usage"
+    },
+    "usageObservedAt": "As of {{time}} (last Codex run)",
+    "usageFailed": "Couldn't fetch usage",
+    "usageLastFetched": "Last fetched {{time}}"
   },
   "settings": {
     "title": "Settings",
@@ -37,6 +43,7 @@
     },
     "terminal": {
       "theme": "Color theme",
+      "themeAuto": "Follow app theme",
       "font": "Font family",
       "fontSize": "Font size",
       "lineHeight": "Line spacing",
@@ -97,15 +104,15 @@
       "alertOnFailure": "Alert when a connection fails",
       "checkAll": "Check all",
       "gateway": {
-        "title": "LLM gateway (optional)",
-        "hint": "Connect any OpenAI-compatible endpoint — LiteLLM, OpenRouter, Ollama, vLLM — for sub-agent delegation and multi-model review. Saved to ~/.open-alive/.env and applied without a restart.",
+        "title": "Additional API (optional)",
+        "hint": "Connect any OpenAI-compatible API you use besides Claude — LiteLLM, OpenRouter, OmniRoute, Ollama, vLLM or any other endpoint: enter its address and key. It is used for sub-agent delegation and multi-model review. Saved to ~/.open-alive/.env and applied without a restart.",
         "statusConnected": "Connected",
         "statusOff": "Not connected",
         "custom": "Custom",
         "baseUrl": "Base URL (without /v1)",
         "apiKey": "API key",
         "apiKeyKeep": "Saved key {{hint}} — leave empty to keep it",
-        "apiKeyOptional": "Optional for keyless gateways such as Ollama",
+        "apiKeyOptional": "Leave empty if the endpoint needs no key",
         "test": "Test connection",
         "testing": "Testing…",
         "testFailed": "The gateway did not answer",
@@ -120,13 +127,110 @@
         "disconnected": "Gateway disconnected",
         "localOnly": "Only this computer can change the gateway (remote devices are read-only).",
         "unavailable": "This server version cannot configure a gateway from the dashboard. Run \"open-alive setup\" instead.",
-        "savedWithoutModels": "Gateway saved, but the model list was not written: {{error}}"
+        "savedWithoutModels": "Gateway saved, but the model list was not written: {{error}}",
+        "baseUrlPlaceholder": "Enter the gateway address (e.g. https://your-gateway.example.com)",
+        "baseUrlExample": "Enter the address — usually {{example}}",
+        "apiKeyRequired": "Enter the API key issued by this service"
       }
     },
     "notifications": {
       "title": "Notifications",
       "toasts": "Toast popups",
       "toastsHint": "Show in-app popups when an agent finishes, needs input, or fails"
+    },
+    "access": {
+      "title": "Access",
+      "requireTokenLocally": "Require a token on this computer too",
+      "hintRemoteOff": "Remote access is off, so this computer is never asked for a token. A token is only needed when remote access (OPEN_ALIVE_REMOTE=1) is on.",
+      "hintRequired": "Remote access is on. This computer must enter a token too (default, safest).",
+      "hintTrusted": "This computer (127.0.0.1) connects without a token. Other devices still need one.",
+      "warning": "Caution: if a tunnel or reverse proxy forwards to this port, outside connections look like this computer and get in without a token. Turn this off only without such a setup.",
+      "localOnly": "This setting can only be changed on this computer.",
+      "unavailable": "Could not load the access settings.",
+      "saveFailed": "Could not save the access settings."
+    },
+    "mobile": {
+      "tab": "Mobile",
+      "loading": "Loading…",
+      "intro": "Follow these four steps to use this dashboard from your phone. Tailscale is a free app that puts this computer and your phone on a private network, so they connect securely without opening router ports.",
+      "recheck": "Check again",
+      "copy": "Copy",
+      "copied": "Copied",
+      "remove": "Remove",
+      "save": "Save",
+      "unsaved": "You have unsaved changes",
+      "restartRequired": "The saved settings take effect after a server restart.",
+      "restartNow": "Restart now",
+      "restarting": "Restarting… (about 10s)",
+      "step1": {
+        "title": "Install and sign in to Tailscale (this computer and your phone)",
+        "body": "Install Tailscale on both devices and sign in with the same account; your phone then reaches this computer at a 100.x.x.x address from anywhere.",
+        "installHere": "On this computer:",
+        "installPhone": "On your phone:",
+        "allPlatforms": "All downloads",
+        "mac": "macOS",
+        "windows": "Windows",
+        "ios": "iPhone (App Store)",
+        "android": "Android (Google Play)",
+        "sameAccount": "Sign in on both with the same account (Google, Apple, GitHub…) and turn Connect on.",
+        "checkDevices": "Check both devices are listed:",
+        "adminConsole": "Tailscale machines",
+        "state": {
+          "missing": "Not installed here",
+          "loggedOut": "Installed · sign-in/connect needed",
+          "ok": "Connected · {{ip}}"
+        }
+      },
+      "step2": {
+        "title": "Create a device token",
+        "body": "The key your phone uses to get in. Make one per device; if one is lost, revoke just that one. The value is shown once, when it is created.",
+        "count": "{{count}}",
+        "labelField": "Token name",
+        "labelPlaceholder": "e.g. phone, ipad",
+        "create": "Create token",
+        "revoke": "Revoke",
+        "confirmRevoke": "Revoke the '{{name}}' token? Devices using it are cut off immediately.",
+        "freshTitle": "Token '{{name}}' created",
+        "qrAlt": "Sign-in QR including the token",
+        "qrHint": "Once remote access is on, scan this with your phone camera to sign in without typing the token. Keep it out of sight of others.",
+        "onceWarning": "This value is shown only now. After you confirm it cannot be shown again — copy it if you need it.",
+        "done": "Got it"
+      },
+      "step3": {
+        "title": "Turn on remote access",
+        "body": "With remote access on, only devices with a token get in, and only to the allowed features (viewing and creating tickets, …).",
+        "on": "On",
+        "off": "Off",
+        "enable": "Use remote access (OPEN_ALIVE_REMOTE)",
+        "roots": "Folders tickets from your phone may run in",
+        "rootsHint": "Remote tickets only run inside these folders. The wider they are, the more a leaked token can do.",
+        "addRoot": "Add folder",
+        "bind": "Address to listen on",
+        "bind_all": "All addresses (recommended)",
+        "bind_allHint": "This computer uses localhost, your phone the Tailscale address. The port is visible on the same Wi-Fi too, but useless without a token.",
+        "bind_tailscale": "Tailscale address only ({{ip}})",
+        "bind_tailscaleHint": "Reachable only over Tailscale. This computer must also use the Tailscale address instead of localhost, and the server will not start while Tailscale is off.",
+        "terminal": "Terminal from the phone",
+        "terminal_off": "Off — tickets only (recommended)",
+        "terminal_watch": "Watch — read sessions, conversations, terminal output",
+        "terminal_input": "Input — type into open terminals",
+        "terminal_shell": "Shell — also open and close terminals",
+        "terminalRisk_watch": "A leaked token lets someone read your code and prompts.",
+        "terminalRisk_input": "A leaked token lets someone run commands on this computer.",
+        "terminalRisk_shell": "A leaked token gives someone a shell on this computer."
+      },
+      "step4": {
+        "title": "Open it on your phone",
+        "noAddress": "No address",
+        "needRemote": "Turn remote access on in step 3 and restart the server; the address appears here.",
+        "needTailscale": "The address appears once Tailscale is connected on this computer (step 1).",
+        "qrAlt": "Address QR",
+        "s1": "Open the Tailscale app on your phone and turn Connect on.",
+        "s2": "Scan the QR with the camera, or type the address in the browser.",
+        "s3": "When asked for a token, paste the one from step 2. (Automatic if you opened the token QR.)",
+        "s4": "Use 'Add to Home Screen' in the browser menu to keep it like an app.",
+        "useTailscaleAddress": "Always open the Tailscale address starting with 100.x. Opening the Wi-Fi IP sends the token unencrypted."
+      }
     }
   },
   "alert": {
@@ -230,7 +334,8 @@
     "justNow": "just now",
     "secondsAgo": "{{count}}s ago",
     "minutesAgo": "{{count}}m ago",
-    "hoursAgo": "{{count}}h ago"
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
   },
   "completionLog": {
     "title": "Completed Sessions",
@@ -244,83 +349,10 @@
     "placeholder": "Add a note, press Enter to save",
     "empty": "No items yet",
     "remove": "Remove",
-    "confirmRemove": "Remove this item?"
-  },
-  "efficio": {
-    "title": "Efficio — Size-adjusted Waste",
-    "refresh": "Refresh",
-    "loading": "Loading…",
-    "empty": "No efficio data yet. Run the collector to score past sessions:",
-    "noData": "No sessions in range",
-    "sessions": "{{count}} sessions",
-    "lastUpdated": "Last collected",
-    "percentile": "Waste percentile",
-    "axis": {
-      "w2": "Context invalidation",
-      "wc": "Edit churn",
-      "bash": "Bash trial-and-error",
-      "w3": "Re-exploration"
-    },
-    "status": {
-      "subj": "Subjective-validated (H1)",
-      "obj-weak": "Weak objective correlation",
-      "none": "Unvalidated (experimental)"
-    },
-    "view": {
-      "subtitle": "Size-adjusted waste signals across your sessions (0-token, deterministic)",
-      "caveat": "Two-dimensional waste (MTMM): perceived (W2) and behavioral (WC/Bash) axes diverge — sometimes oppose. Which is 'real' waste is a value judgment. Direction validity unmeasured.",
-      "model": "Reference model v{{version}}",
-      "last": "Last {{count}} sessions",
-      "tab": {
-        "sessions": "Sessions",
-        "scatter": "Size vs residual",
-        "timeline": "Multi-axis timeline",
-        "distribution": "Distribution",
-        "candidates": "Improvement candidates",
-        "reports": "Reports"
-      },
-      "scatterX": "Session size (tokens)",
-      "scatterY": "Residual (size-adjusted)",
-      "scatterHint": "Above the line = more waste than size predicts",
-      "distHint": "Where each session sits in your own corpus",
-      "actual": "actual",
-      "expected": "expected",
-      "residual": "residual",
-      "turns": "{{count}} turns",
-      "tokens": "{{value}} tok",
-      "noSignal": "no signal",
-      "selectSession": "Click a session for its 4-axis detail",
-      "count": "{{count}} sessions",
-      "candHint": "Not a percentile — concrete commands/files you repeated. Repeats across multiple sessions are the strongest CLAUDE.md rule candidates.",
-      "candBash": "Repeated Bash commands",
-      "candEdits": "Repeatedly edited files",
-      "candNone": "No repeats in range",
-      "candSessions": "{{count}} sessions",
-      "candAcross": "In {{sessions}} sessions, {{total}} repeats total",
-      "repeats": "Repeated in this session"
-    },
-    "cluster": {
-      "perceived": "Perceived",
-      "behavioral": "Behavioral"
-    },
-    "report": {
-      "noData": "No data in range",
-      "nSessions": "{{count}} sessions",
-      "trendTitle": "Trend",
-      "trendDesc": "Linear trend of waste percentile over recent sessions (for the selected axis). Rising means getting worse.",
-      "trendRising": "Rising +{{slope}}/session",
-      "trendFalling": "Falling -{{slope}}/session",
-      "trendFlat": "Flat",
-      "trendAlert": "worsening",
-      "projectTitle": "By project",
-      "projectDesc": "Average waste percentile per project — which project is inefficient for its size.",
-      "cacheTitle": "Cache efficiency",
-      "cacheDesc": "Cache reuse = read / (read + creation). Higher means context is reused rather than re-invalidated.",
-      "cacheReuse": "{{read}} read · {{creation}} created across {{count}} sessions",
-      "weeklyTitle": "Weekly summary",
-      "weeklyDesc": "Per-week average waste and that week's top sessions.",
-      "weekAvg": "avg {{pct}}%"
-    }
+    "confirmRemove": "Remove this item?",
+    "close": "Close to-do",
+    "dragHint": "Drag the title bar to move it",
+    "open": "To-do"
   },
   "pixelOffice": {
     "title": "Pixel Office"
@@ -374,19 +406,27 @@
     "customPathHint": "Enter a path and press Enter, or select a project above",
     "skipPermissions": "Skip permissions (--dangerously-skip-permissions)",
     "skipPermissionsWarning": "Claude will execute all tools without asking for permission.",
+    "noActiveProjects": "No active projects",
+    "launch": {
+      "label": "Start with",
+      "claude": "Claude",
+      "claude-skip": "Claude · skip permissions",
+      "codex": "Codex",
+      "codex-skip": "Codex · skip permissions",
+      "codex-local": "Codex · local {{model}}",
+      "codex-local-skip": "Codex · local {{model}} · skip permissions",
+      "codexSkipWarning": "Codex will run every command without approval or sandbox (--dangerously-bypass-approvals-and-sandbox)."
+    },
     "modePopup": "Popup",
     "modeBottom": "Bottom",
     "modeRight": "Right",
     "modeFullscreen": "Fullscreen",
-    "modeFullscreenDisabled": "Fullscreen is unavailable in Prompt/Efficio view",
     "selectHere": "Select",
     "tabLocal": "Local folder",
     "tabSsh": "SSH remote",
     "quickSelect": "Quick select",
     "browseSection": "Browse",
     "startHere": "Start in this folder",
-    "variantClaudeHint": "Run the standard `claude` CLI",
-    "variantAgentsHint": "Run `claude agents`",
     "emptyDir": "No subdirectories",
     "collapse": "Minimize",
     "closeDialog": "Close",
@@ -446,7 +486,10 @@
       "message": "This session may still be running in another terminal. Resuming opens a second copy that writes to the same transcript, which can corrupt it. Only continue if you are sure the original is no longer active.",
       "cancel": "Cancel",
       "confirm": "Resume anyway"
-    }
+    },
+    "closeTab": "Close terminal",
+    "positionLabel": "Terminal position",
+    "dragHint": "Drag the title bar left or right to move it"
   },
   "chat": {
     "title": "Chat",
@@ -457,21 +500,21 @@
   },
   "viewMode": {
     "label": "View mode",
-    "groupMonitor": "Monitor",
-    "groupTools": "Tools",
-    "animation": "Animation",
-    "list": "List",
     "prompt": "Prompt",
-    "efficio": "Efficio",
     "tickets": "Tickets",
-    "spread": "Spread",
     "jarvis": "Jarvis",
-    "workspace": "Workspaces",
-    "board": "Board",
     "data": "Data",
     "archive": "Session Management",
     "ticketMgmt": "Ticket Management",
-    "backends": "Backends"
+    "backends": "Backends",
+    "cost": "Cost",
+    "terminal": "Terminal",
+    "layout": {
+      "label": "Terminal layout",
+      "window": "Window",
+      "split": "Split",
+      "full": "Full"
+    }
   },
   "board": {
     "tab": {
@@ -559,7 +602,7 @@
   },
   "backends": {
     "title": "Backend connections",
-    "subtitle": "Connect the orchestrator (Claude) and the sub-agents it delegates to, and check their status.",
+    "subtitle": "Claude is the base connection and is checked first. The additional API and SSH hosts are optional.",
     "loading": "Loading…",
     "check": "Check",
     "checking": "Checking…",
@@ -577,7 +620,14 @@
     "sshHost": "Host (e.g. 192.0.2.20)",
     "sshUser": "User (e.g. dev)",
     "sshAdd": "Add host",
-    "remove": "Remove"
+    "remove": "Remove",
+    "required": "Required",
+    "label": {
+      "claude-local": "Claude Code",
+      "litellm": "Additional API",
+      "ssh": "SSH host",
+      "codex-local": "Codex (optional)"
+    }
   },
   "tickets": {
     "heroPrompt": "What do you want to solve?",
@@ -587,7 +637,6 @@
     "location": "Location",
     "locationLocal": "Local",
     "remotePickerTitle": "Select remote folder",
-    "remotePathPlaceholder": "Remote path, e.g. /home/dev/project",
     "pickerTitle": "Choose project folder",
     "useThisFolder": "Use this folder",
     "create": "Solve",
@@ -790,7 +839,20 @@
     "panelOffLabel": "Panel off — local gate only",
     "runsOn": "Runs on {{target}} over SSH",
     "createFailed": "Could not create the ticket (HTTP {{status}})",
-    "createNetworkError": "Cannot reach the server — is it running?"
+    "createNetworkError": "Cannot reach the server — is it running?",
+    "model": {
+      "label": "Model",
+      "effortUnsupported": "The chosen model does not support this effort; it runs with the model default",
+      "codexLocalOnly": "Codex models run on this computer only. Switch the location to local or pick a Claude model.",
+      "group": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "other": "Other"
+      },
+      "none": "No models detected"
+    },
+    "remotePathPlaceholder": "Remote path, e.g. /home/dev/project",
+    "options": "Options"
   },
   "spread": {
     "empty": "No open terminals",
@@ -888,25 +950,6 @@
     "listening": "Listening!",
     "done": "Done! Good work~",
     "idle": "Standing by..."
-  },
-  "dashboard": {
-    "title": "Sessions",
-    "subtitle": "Live and resumable Claude sessions. Click a card to open, focus, or resume.",
-    "empty": "No sessions yet. Start a new chat from the sidebar.",
-    "section": {
-      "live": "Live · {{n}}",
-      "dormant": "Resumable · {{n}}"
-    },
-    "action": {
-      "focus": "Open",
-      "resume": "Resume"
-    },
-    "time": {
-      "now": "just now",
-      "minutesAgo": "{{n}}m ago",
-      "hoursAgo": "{{n}}h ago",
-      "daysAgo": "{{n}}d ago"
-    }
   },
   "workspaceTree": {
     "loading": "Loading workspaces…",
@@ -1136,7 +1179,7 @@
     "body": "This server requires a token. Paste the device token from `open-alive token new`, or reopen the dashboard from `open-alive start`.",
     "placeholder": "Device token",
     "submit": "Connect",
-    "invalid": "That token was refused. Check it and try again."
+    "invalid": "Not a token. Paste only the token value — letters, digits, - and _ (no spaces or labels)."
   },
   "mobile": {
     "listTitle": "Tickets",
@@ -1167,12 +1210,26 @@
     "tabTickets": "Tickets",
     "tabSessions": "Sessions",
     "sessionsEmpty": "No sessions running",
+    "sessionsError": "Could not load the session list ({{detail}}). Check ~/.open-alive/server.log on the PC.",
+    "endedSection": "Ended sessions {{count}}",
+    "sessionStatus": {
+      "approval": "Needs approval",
+      "waiting": "Waiting for you",
+      "error": "Error",
+      "working": "Working",
+      "starting": "Starting",
+      "idle": "Idle",
+      "ended": "Ended"
+    },
     "sessionsLoading": "Loading…",
     "conversationEmpty": "Nothing said yet",
     "openTerminal": "Open terminal",
     "terminalTitle": "Terminal",
     "terminalInput": "Type a command",
     "terminalSend": "Send",
+    "terminalZoom": "Zoom",
+    "terminalFit": "Fit",
+    "terminalReattach": "Reattach",
     "terminalNew": "New terminal",
     "terminalAttaching": "Attaching…",
     "terminalGone": "This terminal has exited",
@@ -1198,12 +1255,75 @@
     "home": "Home — tickets",
     "pullToRefresh": "Pull to refresh",
     "releaseToRefresh": "Release to refresh",
-    "refreshing": "Refreshing…"
+    "refreshing": "Refreshing…",
+    "noProject": "(no folder)",
+    "spawnModeLabel": "What to run",
+    "spawnClaude": "Claude",
+    "spawnCodex": "Codex",
+    "spawnCodexLocal": "Codex · local",
+    "spawnLocalModel": "Local model: {{model}}",
+    "spawnShell": "Shell",
+    "spawnRunning": "Running now",
+    "spawnRecent": "Recent folders",
+    "spawnAllowed": "Allowed folders",
+    "spawnManual": "Type a path",
+    "spawnStart": "Start"
   },
   "appearance": {
     "toggle": "Theme: {{current}} (click for {{next}})",
     "dark": "Dark",
     "light": "Light",
     "system": "System"
+  },
+  "onboarding": {
+    "title": "Get started with open-alive",
+    "stepOf": "Step {{current}} of {{total}}",
+    "skipAll": "Later",
+    "next": "Next",
+    "back": "Back",
+    "start": "Start",
+    "reopen": "Run connection setup again",
+    "claude": {
+      "title": "1. Connect Claude Code",
+      "hint": "Tickets run and are verified with the Claude Code CLI on this computer. Checking the connection also loads the latest models available to you.",
+      "checking": "Checking connection…",
+      "recheck": "Check again",
+      "connected": "Connected",
+      "failed": "Could not connect to Claude Code",
+      "checkFailed": "Check request failed ({{status}})",
+      "models": "Latest available models",
+      "installHint": "If it is not installed, install it from a terminal:",
+      "loginHint": "Then run it once in a terminal to log in, and press 'Check again':",
+      "codexTitle": "Codex CLI (optional)",
+      "codexHint": "When installed and logged in, Codex models can be picked as a ticket's model too.",
+      "codexConnected": "Codex available",
+      "codexMissing": "Codex not installed or not logged in — install: npm install -g @openai/codex, log in: codex login"
+    },
+    "gateway": {
+      "title": "2. Connect an additional API (optional)",
+      "hint": "To split work across other models or cross-check results, enter the gateway you use. Skip this if you do not need it.",
+      "next": "Next (skip)"
+    },
+    "done": {
+      "title": "All set",
+      "ready": "Claude Code is connected. You can hand off work from the tickets screen right away.",
+      "claudeMissing": "Claude Code is not connected yet. Tickets cannot run until it is.",
+      "reopen": "You can run this again any time from Settings → Backend."
+    }
+  },
+  "models": {
+    "provider": {
+      "anthropic": "Anthropic",
+      "openai": "OpenAI",
+      "google": "Google",
+      "meta": "Meta",
+      "mistral": "Mistral AI",
+      "deepseek": "DeepSeek",
+      "xai": "xAI",
+      "qwen": "Alibaba Qwen",
+      "moonshot": "Moonshot AI",
+      "zhipu": "Zhipu AI",
+      "other": "Other provider"
+    }
   }
 }

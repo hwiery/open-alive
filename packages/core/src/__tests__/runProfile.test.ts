@@ -8,16 +8,35 @@ import {
   TICKET_RUN_PRESET_IDS,
   TICKET_EFFORT_LEVELS,
   DEFAULT_TICKET_RUN_PRESET,
+  FALLBACK_TICKET_MODELS,
+  mergeTicketModels,
+  isClaudeModelId,
+  isTicketModelChoice,
 } from '../tickets/runProfile.js';
 
 describe('resolveRunProfile', () => {
   it('resolves each preset to concrete flags', () => {
-    expect(resolveRunProfile('fast')).toEqual({ model: 'claude-sonnet-5', effort: 'low' });
-    expect(resolveRunProfile('medium')).toEqual({ model: 'claude-opus-5', effort: 'medium' });
-    expect(resolveRunProfile('standard')).toEqual({ model: 'claude-opus-5', effort: 'high' });
-    expect(resolveRunProfile('deep')).toEqual({ model: 'claude-opus-5', effort: 'max' });
+    expect(resolveRunProfile('fast')).toEqual({ model: 'claude-sonnet-5-5', effort: 'low' });
+    expect(resolveRunProfile('medium')).toEqual({ model: 'claude-opus-5-5', effort: 'medium' });
+    expect(resolveRunProfile('standard')).toEqual({ model: 'claude-opus-5-5', effort: 'high' });
+    expect(resolveRunProfile('deep')).toEqual({ model: 'claude-opus-5-5', effort: 'max' });
     expect(resolveRunProfile('expert')).toEqual({ model: 'claude-fable-5-1', effort: 'medium' });
     expect(resolveRunProfile('ultimate')).toEqual({ model: 'claude-fable-5-1', effort: 'high' });
+  });
+
+  it('resolves tiers against a probed model map', () => {
+    const models = mergeTicketModels({ opus: 'claude-opus-6', sonnet: 'claude-sonnet-6-1' });
+    expect(resolveRunProfile('deep', models)).toEqual({ model: 'claude-opus-6', effort: 'max' });
+    expect(resolveRunProfile('fast', models)).toEqual({ model: 'claude-sonnet-6-1', effort: 'low' });
+    // A tier the probe did not report keeps its fallback id.
+    expect(resolveRunProfile('expert', models)).toEqual({ model: FALLBACK_TICKET_MODELS.fable, effort: 'medium' });
+  });
+
+  it('ignores probed values that are not Claude model ids', () => {
+    const models = mergeTicketModels({ opus: 'opus', sonnet: 'gpt-5' } as never);
+    expect(models).toEqual(FALLBACK_TICKET_MODELS);
+    expect(isClaudeModelId('claude-haiku-4-5-20251001')).toBe(true);
+    expect(isClaudeModelId('claude-opus-5-5; rm -rf /')).toBe(false);
   });
 
   it('pins a full model id, never a moving alias', () => {
@@ -62,15 +81,15 @@ describe('guards', () => {
 });
 
 describe('modelDisplayName', () => {
-  it('renders pinned ids as their marketing name', () => {
+  it('derives the name from the id, so new releases need no label table', () => {
     expect(modelDisplayName('claude-opus-5')).toBe('Opus 5');
-    expect(modelDisplayName('claude-sonnet-5')).toBe('Sonnet 5');
+    expect(modelDisplayName('claude-opus-5-5')).toBe('Opus 5.5');
+    expect(modelDisplayName('claude-fable-5-1')).toBe('Fable 5.1');
+    expect(modelDisplayName('claude-haiku-4-5-20251001')).toBe('Haiku 4.5');
   });
 
-  it('passes unknown ids through untouched', () => {
-    // A run can report a model we have no label for (a remote host on a
-    // different build). Showing the raw id beats inventing a name.
-    expect(modelDisplayName('claude-opus-4-8')).toBe('claude-opus-4-8');
+  it('passes non-Claude ids through untouched', () => {
+    expect(modelDisplayName('gpt-5')).toBe('gpt-5');
     expect(modelDisplayName(undefined)).toBeUndefined();
   });
 
@@ -78,6 +97,19 @@ describe('modelDisplayName', () => {
     for (const id of TICKET_RUN_PRESET_IDS) {
       const model = TICKET_RUN_PRESETS[id].model;
       expect(modelDisplayName(model)).not.toBe(model);
+    }
+  });
+});
+
+describe('isTicketModelChoice', () => {
+  it('accepts tier aliases and full Claude ids, including the long-context suffix', () => {
+    for (const v of ['opus', 'haiku', 'claude-opus-5-5', 'claude-sonnet-5-5[1m]', 'claude-haiku-4-5-20251001']) {
+      expect(isTicketModelChoice(v)).toBe(true);
+    }
+  });
+  it('rejects anything that could become a different CLI argument', () => {
+    for (const v of ['--dangerously-skip-permissions', 'gpt-5', 'claude-opus 5', 'claude-opus-5;id', '', 'claude-' + 'a'.repeat(90), 3]) {
+      expect(isTicketModelChoice(v)).toBe(false);
     }
   });
 });

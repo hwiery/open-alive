@@ -50,7 +50,7 @@ export interface LegacyManagedSession {
   claudeSessionId: string;
   cwd?: string;
   displayName?: string;
-  mode: 'claude' | 'shell';
+  mode: 'claude' | 'codex' | 'shell';
   claudeVariant?: 'claude' | 'agents';
   createdAt: number;
   lastActive: number;
@@ -61,7 +61,7 @@ export interface LegacyOpenTab {
   claudeSessionId?: string;
   cwd?: string;
   label: string;
-  mode: 'claude' | 'shell';
+  mode: 'claude' | 'codex' | 'shell';
   claudeVariant?: 'claude' | 'agents';
   displayName?: string;
 }

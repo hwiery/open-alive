@@ -33,7 +33,7 @@ describe('MobileTicketCompose', () => {
     fireEvent.click(solve());
     await waitFor(() =>
       expect(onCreate).toHaveBeenCalledWith(
-        expect.objectContaining({ goal: '버그 수정', cwd: '/Users/me/work/app', preset: 'standard' }),
+        expect.objectContaining({ goal: '버그 수정', cwd: '/Users/me/work/app', model: 'claude-opus-5-5', effort: 'high' }),
       ),
     );
   });
@@ -53,9 +53,10 @@ describe('MobileTicketCompose', () => {
     const onCreate = vi.fn(async () => null);
     render(<MobileTicketCompose projects={[projects[0]!]} onCancel={() => {}} onCreate={onCreate} />);
     fireEvent.change(goalBox(), { target: { value: '작업' } });
-    fireEvent.click(screen.getByRole('radio', { name: /심층|Deep/ }));
+    fireEvent.click(screen.getByRole('radio', { name: 'max' }));
+    fireEvent.click(screen.getByRole('radio', { name: /Sonnet/ }));
     fireEvent.click(solve());
-    await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ preset: 'deep' })));
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ model: 'claude-sonnet-5-5', effort: 'max' })));
   });
 
   it('carries the three run switches, which default on as they do on the desktop', async () => {

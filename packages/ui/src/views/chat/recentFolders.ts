@@ -19,7 +19,7 @@
  */
 
 const STORAGE_KEY = 'open-alive:recent-folders:v1';
-const MAX_ENTRIES = 10;
+const MAX_ENTRIES = 30;
 
 /** Build the localStorage key for a given scope (unscoped → the legacy key). */
 function storageKey(scope?: string): string {

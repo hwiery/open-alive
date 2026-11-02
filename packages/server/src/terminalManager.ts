@@ -39,6 +39,7 @@ export interface CreateTerminalOptions {
   claudeSessionId?: string;
   resumeSessionId?: string;
   displayName?: string;
+  localModel?: boolean;
 }
 
 interface ManagedTerminal {
@@ -166,6 +167,7 @@ export class TerminalManager {
         claudeSessionId: opts.claudeSessionId,
         resumeSessionId: opts.resumeSessionId,
         displayName: opts.displayName,
+        localModel: opts.localModel,
       });
     } catch (err) {
       // pty.spawn can throw synchronously (e.g. cwd no longer exists for a

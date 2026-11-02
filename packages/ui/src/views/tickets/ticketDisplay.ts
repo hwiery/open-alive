@@ -196,10 +196,10 @@ export function formatDuration(ms?: number): string | null {
  * Compact card meta: cumulative rounds (↻n, only after a follow-up) + model +
  * cumulative tokens + cost. Usage is summed across the initial run and replies.
  */
-export function runMetaShort(ticket: Ticket): string {
+export function runMetaShort(ticket: Ticket, opts: { withModel?: boolean } = {}): string {
   const parts: string[] = [];
   if (ticket.rounds && ticket.rounds > 1) parts.push(`↻${ticket.rounds}`);
-  if (ticket.model) parts.push(ticket.model);
+  if (ticket.model && opts.withModel !== false) parts.push(ticket.model);
   const tok = formatTokens(ticket.usage?.totalTokens);
   if (tok) parts.push(`${tok} tok`);
   const cost = formatCost(ticket.usage?.costUsd);

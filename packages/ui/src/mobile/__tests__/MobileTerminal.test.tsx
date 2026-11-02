@@ -7,11 +7,13 @@ import { createTermFeed } from '../termFeed.ts';
 
 // jsdom has no canvas for xterm's renderer; a fake records what reached it.
 const xterm = vi.hoisted(() => ({
-  instances: [] as Array<{ writes: string[]; cols: number; rows: number; options: Record<string, unknown> }>,
+  instances: [] as Array<{ writes: string[]; scrolled: number[]; cols: number; rows: number; options: Record<string, unknown> }>,
 }));
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     writes: string[] = [];
+    scrolled: number[] = [];
+    buffer = { active: { viewportY: 100, baseY: 100 } };
     cols: number;
     rows: number;
     options: Record<string, unknown>;
@@ -21,7 +23,13 @@ vi.mock('@xterm/xterm', () => ({
       this.rows = opts.rows;
       xterm.instances.push(this);
     }
-    open() {}
+    open(host: HTMLElement) {
+      const el = document.createElement('div');
+      el.className = 'xterm';
+      el.setAttribute('data-testid', 'xterm-screen');
+      host.appendChild(el);
+    }
+    scrollLines(n: number) { this.scrolled.push(n); }
     write(data: string) { this.writes.push(data); }
     reset() {}
     resize(cols: number, rows: number) { this.cols = cols; this.rows = rows; }
@@ -30,6 +38,7 @@ vi.mock('@xterm/xterm', () => ({
 }));
 
 afterEach(() => {
+  vi.restoreAllMocks();
   cleanup();
   xterm.instances.length = 0;
 });
@@ -108,6 +117,35 @@ describe('MobileTerminal', () => {
     expect(onKey).toHaveBeenCalledWith('\x1b');
     fireEvent.click(screen.getByRole('button', { name: '↑' }));
     expect(onKey).toHaveBeenCalledWith('\x1b[A');
+    // Cursor moves inside a prompt's line, and end-of-input for a REPL.
+    fireEvent.click(screen.getByRole('button', { name: '←' }));
+    expect(onKey).toHaveBeenCalledWith('\x1b[D');
+    fireEvent.click(screen.getByRole('button', { name: '→' }));
+    expect(onKey).toHaveBeenCalledWith('\x1b[C');
+    fireEvent.click(screen.getByRole('button', { name: 'Ctrl-D' }));
+    expect(onKey).toHaveBeenCalledWith('\x04');
+  });
+
+  it('zooms the pane to a readable font and remembers it', () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    });
+    try {
+      render(<MobileTerminal {...props()} />);
+      const zoom = screen.getByRole('button', { name: /확대|Zoom/ });
+      expect(zoom).toHaveAttribute('aria-pressed', 'false');
+      fireEvent.click(zoom);
+      expect(zoom).toHaveAttribute('aria-pressed', 'true');
+      expect(store.get('open-alive:mobile-terminal-zoom')).toBe('1');
+      cleanup();
+      render(<MobileTerminal {...props()} />);
+      expect(screen.getByRole('button', { name: /확대|Zoom/ })).toHaveAttribute('aria-pressed', 'true');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('hides every input control when typing is not permitted', () => {
@@ -115,6 +153,25 @@ describe('MobileTerminal', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Ctrl-C' })).not.toBeInTheDocument();
     expect(screen.getByText(/읽기 전용|Read-only/i)).toBeInTheDocument();
+  });
+
+  it('leaves a downward swipe to the terminal scroll, and re-attaches from a button', () => {
+    const onRefresh = vi.fn();
+    render(<MobileTerminal {...props({ onRefresh })} />);
+    // Pull-to-refresh here cleared the output mid-read and fought the xterm scroll.
+    expect(screen.queryByTestId('pull-scroll')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /다시 연결|Reattach/ }));
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('scrolls history from a swipe on the terminal itself, not only on the blank pane', () => {
+    // 24 rows at 240px: one line per 10px of travel.
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ height: 240 } as DOMRect);
+    render(<MobileTerminal {...props()} />);
+    const target = screen.getByTestId('xterm-screen');
+    fireEvent.touchStart(target, { touches: [{ clientY: 200 }] });
+    fireEvent.touchMove(target, { touches: [{ clientY: 250 }] });
+    expect(xterm.instances[0]?.scrolled).toEqual([-5]);
   });
 
   it('says when the terminal has exited instead of looking merely idle', () => {

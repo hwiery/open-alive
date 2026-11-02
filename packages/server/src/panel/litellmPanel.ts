@@ -68,6 +68,30 @@ export function resolvePanelModels(env: NodeJS.ProcessEnv): readonly string[] {
 }
 
 /**
+ * The roster to run with, or null when the user has not named any real model.
+ *
+ * The placeholder roster is for tests and examples only: on a live gateway those
+ * ids do not exist, so a panel built from them would fail every seat on every
+ * ticket. Order: `OA_PANEL_MODELS`, then models.json `panelModels`, then the first
+ * three models of a user catalogue (the dashboard writes the gateway's own list).
+ */
+/** Ids that cannot answer a chat completion (gateways list them alongside chat models). */
+const NON_CHAT_MODEL = /embed|rerank|whisper|tts|transcri|dall-e|image|moderation|audio/i;
+
+export function configuredPanelModels(env: NodeJS.ProcessEnv): readonly string[] | null {
+  const raw = env.OA_PANEL_MODELS?.trim();
+  if (raw) {
+    const models = raw.split(',').map((m) => m.trim()).filter(Boolean);
+    if (models.length > 0) return Object.freeze(models);
+  }
+  const catalog = ACTIVE_DELEGATE_CATALOG;
+  if (catalog.panelModels && catalog.panelModels.length > 0) return catalog.panelModels;
+  if (catalog.source === 'builtin') return null;
+  const ids = catalog.models.map((m) => m.id).filter((id) => !NON_CHAT_MODEL.test(id)).slice(0, 3);
+  return ids.length > 0 ? Object.freeze(ids) : null;
+}
+
+/**
  * The models one seat will try, in order.
  *
  * A panel is only worth running if enough seats actually answer, and on a shared
