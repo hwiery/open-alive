@@ -11,7 +11,7 @@ import { realpathSync, existsSync } from 'node:fs';
 import { addUsage } from '@open-alive/core';
 import type {
   Ticket, TicketFailureReason, TicketUsage, TicketTurn,
-  TicketVerification, TicketCommit, TicketDecisionPanel, TicketAgentExit,
+  TicketVerification, TicketCommit, TicketDecisionPanel, TicketAgentExit, TicketAccountHandoff,
 } from '@open-alive/core';
 import type { TicketStore } from './ticketStore.js';
 import { describeAgentExit } from './agentExit.js';
@@ -74,6 +74,22 @@ export interface SpawnMainOpts {
    * final outcome would lose the id on exactly the runs that need it most.
    */
   onSessionId?: (sessionId: string) => void;
+}
+
+/**
+ * Claude account rotation (see `claudeAccounts.ts`). The runner records which
+ * account each run uses on `ticket.claudeAccount`; `spawnMain` turns that into
+ * the process env.
+ */
+export interface TicketAccountRotation {
+  /** Account for the next run: `current` while usable, else the next usable one. Undefined = off / all spent. */
+  pick(current?: string): string | undefined;
+  /** Bench an account that refused a run. Undefined = the default login. */
+  markLimited(account: string | undefined, reason: string): void;
+  /** Make `sessionId` resumable under `to` (copy its transcript when not shared). */
+  transferSession(sessionId: string, from: string | undefined, to: string): Promise<void>;
+  /** Number of accounts; caps hand-offs per run so a ticket never loops. */
+  readonly size: number;
 }
 
 export interface TicketRunnerOptions {
@@ -140,6 +156,15 @@ export interface TicketRunnerOptions {
    * Returns an error message, or null when valid.
    */
   validateCwd?: (ticket: Ticket) => Promise<string | null>;
+  /**
+   * Move a ticket to another Claude account when its account runs out of usage.
+   * Omitted = a spent account fails the ticket with `usage-limit`, as before.
+   * Applies to local Claude tickets only: an SSH host has its own logins, and
+   * Codex its own accounts.
+   */
+  accounts?: TicketAccountRotation;
+  /** Prompt the resumed session gets on the new account. */
+  handoffPrompt?: string;
 }
 
 export interface TicketRunner {
@@ -155,6 +180,8 @@ export interface TicketRunner {
 const DEFAULT_CONCURRENCY = 10;
 const DEFAULT_RESUME_PROMPT =
   '직전 작업이 서버 재시작으로 중단되었습니다. 지금까지의 맥락을 이어받아 목표를 끝까지 완료하세요.';
+const DEFAULT_HANDOFF_PROMPT =
+  '직전 실행이 계정 사용량 한도로 중단되어 다른 계정에서 이어받았습니다. 지금까지의 맥락을 이어받아 중단된 지점부터 목표를 끝까지 완료하세요.';
 
 /**
  * True when cwd is within some allowed root. Empty roots = unrestricted.
@@ -180,6 +207,7 @@ function isTerminal(t: Ticket | undefined): boolean {
 
 export function createTicketRunner(options: TicketRunnerOptions): TicketRunner {
   const { store, spawnMain, verify, broadcast, onSettled, validateCwd, commitWork, adviseDecision, advisoryEnabled } = options;
+  const handoffPrompt = options.handoffPrompt ?? DEFAULT_HANDOFF_PROMPT;
   const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
   const timeoutMs = options.timeoutMs;
   const resumePrompt = options.resumePrompt ?? DEFAULT_RESUME_PROMPT;
@@ -249,6 +277,79 @@ export function createTicketRunner(options: TicketRunnerOptions): TicketRunner {
     await apply(id, { claudeSessionId: sessionId });
   }
 
+  /** The rotation, when it applies to this ticket (local Claude runs only). */
+  function rotationFor(ticket: Ticket | undefined): TicketAccountRotation | undefined {
+    const rotation = options.accounts;
+    if (!rotation || !ticket) return undefined;
+    if (ticket.location?.kind === 'ssh' || (ticket.engine ?? 'claude') !== 'claude') return undefined;
+    return rotation;
+  }
+
+  /**
+   * Account patch for a run that is about to start. A resumed session that has
+   * to move (its account is spent) gets its transcript copied first, so
+   * `--resume` finds it under the new account.
+   */
+  async function accountPatch(ticket: Ticket, resumeSessionId?: string): Promise<Partial<Ticket>> {
+    const rotation = rotationFor(ticket);
+    if (!rotation) return {};
+    const account = rotation.pick(ticket.claudeAccount);
+    if (!account || account === ticket.claudeAccount) return {};
+    if (resumeSessionId) {
+      await rotation.transferSession(resumeSessionId, ticket.claudeAccount, account).catch(() => {});
+    }
+    return { claudeAccount: account };
+  }
+
+  /**
+   * The run stopped because its account is spent. Bench that account and
+   * continue the session on the next usable one. Returns false when there is
+   * nowhere to go (rotation off, every account spent, or this run already
+   * hopped through every account), so the caller fails the ticket as before.
+   */
+  async function handOff(id: string, cur: Ticket, sessionId: string | null, detail: string): Promise<boolean> {
+    const rotation = rotationFor(cur);
+    if (!rotation) return false;
+    rotation.markLimited(cur.claudeAccount, detail);
+    const next = rotation.pick();
+    if (!next || next === cur.claudeAccount) return false;
+    const startedAt = cur.startedAt ?? 0;
+    const thisRun = (cur.accountHandoffs ?? []).filter((h) => h.at >= startedAt).length;
+    if (thisRun >= rotation.size) return false;
+    if (sessionId) await rotation.transferSession(sessionId, cur.claudeAccount, next).catch(() => {});
+    const handoff: TicketAccountHandoff = {
+      ...(cur.claudeAccount ? { from: cur.claudeAccount } : {}),
+      to: next,
+      reason: 'usage-limit',
+      resumed: Boolean(sessionId),
+      at: now(),
+    };
+    const moved = await apply(id, {
+      claudeAccount: next,
+      accountHandoffs: [...(cur.accountHandoffs ?? []), handoff],
+      ...(sessionId ? { claudeSessionId: sessionId } : {}),
+    });
+    if (!moved || isTerminal(moved)) {
+      releaseSlot(id);
+      return true;
+    }
+    let handle: RunnerHeadlessHandle;
+    try {
+      handle = spawnMain(
+        moved,
+        sessionId
+          ? { prompt: handoffPrompt, resumeSessionId: sessionId, onSessionId: (sid) => void noteSession(id, sid) }
+          : { onSessionId: (sid) => void noteSession(id, sid) },
+      );
+    } catch (e) {
+      await fail(id, 'error', `다른 계정으로 이어서 실행하지 못했습니다: ${String(e)}`);
+      return true;
+    }
+    clearTimer(id);
+    attach(id, handle);
+    return true;
+  }
+
   /** Register a live agent run's handle (+ cap, when configured) and route its completion. */
   function attach(id: string, handle: RunnerHeadlessHandle): void {
     handles.set(id, handle);
@@ -304,7 +405,7 @@ export function createTicketRunner(options: TicketRunnerOptions): TicketRunner {
       }
     }
 
-    const started = await apply(id, { state: 'running', startedAt: now() });
+    const started = await apply(id, { state: 'running', startedAt: now(), ...(await accountPatch(ticket)) });
     if (!started) {
       releaseSlot(id);
       return;
@@ -329,7 +430,12 @@ export function createTicketRunner(options: TicketRunnerOptions): TicketRunner {
    */
   async function resumeInterrupted(ticket: Ticket): Promise<void> {
     running.add(ticket.id);
-    const started = await apply(ticket.id, { state: 'running', startedAt: now(), endedAt: undefined });
+    const started = await apply(ticket.id, {
+      state: 'running',
+      startedAt: now(),
+      endedAt: undefined,
+      ...(await accountPatch(ticket, ticket.claudeSessionId)),
+    });
     if (!started) {
       releaseSlot(ticket.id);
       return;
@@ -375,6 +481,10 @@ export function createTicketRunner(options: TicketRunnerOptions): TicketRunner {
       // A spent usage window or an inaccessible model is the account's state,
       // not the work's: name it so the reader knows to wait or switch presets.
       const quota = classifyAgentQuotaError([r?.result, outcome.stderr]);
+      if (quota?.reason === 'usage-limit' && quota.windowSpent && cur) {
+        const sessionId = outcome.sessionId ?? cur.claudeSessionId ?? null;
+        if (await handOff(id, cur, sessionId, quota.detail)) return;
+      }
       await fail(id, quota?.reason ?? 'error', quota?.summary ?? summary, undefined, exit);
       return;
     }
@@ -494,6 +604,7 @@ export function createTicketRunner(options: TicketRunnerOptions): TicketRunner {
       startedAt: now(),
       endedAt: undefined,
       turns: [...(t.turns ?? []), userTurn],
+      ...(await accountPatch(t, t.claudeSessionId)),
     });
     if (!started) {
       releaseSlot(id);

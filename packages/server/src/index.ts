@@ -47,6 +47,10 @@ import { createBranch, deleteBranch, listBranches, switchBranch } from './gitBra
 import { ticketToUpsert, ticketRunOutcome, orphanTicketRunIds } from './runAdapters/ticketRuns.js';
 import { runIdForSession } from './runAttribution.js';
 import { createTicketRunner } from './ticketRunner.js';
+import {
+  ClaudeAccountPool, parseClaudeAccounts, parseSwitchThreshold, DEFAULT_ACCOUNT_NAME,
+} from './claudeAccounts.js';
+import { fetchClaudeUsageViaCli } from './usage/claudeCliUsage.js';
 import { createVerifier } from './ticketVerifier.js';
 import { resolveExecutor } from './executors/resolve.js';
 import { createFlagSupportCache } from './agentFlags.js';
@@ -578,16 +582,41 @@ const panelFor = (ticket: import('@open-alive/core').Ticket) =>
 const askRemoteToCommit = (ticket: import('@open-alive/core').Ticket) =>
   autoCommitEnabled && ticket.autoCommit !== false && ticket.location?.kind === 'ssh';
 
-// The verifier runs at the SAME location as the main agent.
+// Claude account rotation (OA_CLAUDE_ACCOUNTS). When a local ticket's account
+// runs out of usage, the runner benches it and resumes the session on the next
+// account; at OA_CLAUDE_ACCOUNT_SWITCH_AT (default 99%) of a 5h/7d window an
+// account stops taking new runs. Off with fewer than two accounts.
+const claudeAccounts = new ClaudeAccountPool({
+  accounts: parseClaudeAccounts(process.env.OA_CLAUDE_ACCOUNTS, homedir(), (m) => console.warn(`[accounts] ${m}`)),
+  threshold: parseSwitchThreshold(process.env.OA_CLAUDE_ACCOUNT_SWITCH_AT),
+  stateFile: join(ALIVE_DIR, 'claude-accounts.json'),
+  fetchUsage: (extraEnv) => fetchClaudeUsageViaCli(undefined, undefined, extraEnv),
+  log: (m) => console.log(m),
+});
+if (claudeAccounts.enabled) {
+  console.log(
+    `[accounts] rotating tickets across ${claudeAccounts.accounts.map((a) => a.name).join(', ')}` +
+      ` (switch at ${Math.round(claudeAccounts.threshold * 100)}%)`,
+  );
+}
+/** Env that runs a local `claude` child as `account` (empty when rotation is off). */
+const accountEnv = (location: TicketLocation | undefined, account: string | undefined): Record<string, string> =>
+  claudeAccounts.enabled && location?.kind !== 'ssh' ? claudeAccounts.envFor(account) : {};
+
+// The verifier runs at the SAME location as the main agent. Locally it takes
+// whichever account is usable now: it is a fresh session, so nothing to resume.
 const ticketVerifier = createVerifier({
-  run: ({ goal, cwd, location, orchestrated, flags }) =>
-    executorFor(location).spawn({
+  run: ({ goal, cwd, location, orchestrated, flags }) => {
+    const env = accountEnv(location, claudeAccounts.pick());
+    return executorFor(location).spawn({
       goal,
       cwd,
       permissionMode: 'bypassPermissions',
       ...(flags && (flags.model || flags.effort) ? { run: flags } : {}),
       ...(orchestrated && delegateBinDir ? { pathPrepend: delegateBinDir } : {}),
-    }).done,
+      ...(Object.keys(env).length > 0 ? { extraEnv: env } : {}),
+    }).done;
+  },
   panel: panelFor,
 });
 const ticketRunner = createTicketRunner({
@@ -642,11 +671,27 @@ const ticketRunner = createTicketRunner({
       },
       // Only the orchestrator run gets the delegate tool + a ticket tag; the
       // verifier deliberately omits OA_TICKET_ID so its re-delegations aren't logged.
-      ...(orchestrated && delegateBinDir
-        ? { pathPrepend: delegateBinDir, extraEnv: { OA_TICKET_ID: ticket.id } }
-        : {}),
+      ...(orchestrated && delegateBinDir ? { pathPrepend: delegateBinDir } : {}),
+      ...(() => {
+        const extraEnv = {
+          ...(ticket.engine === 'codex' ? {} : accountEnv(ticket.location, ticket.claudeAccount)),
+          ...(orchestrated && delegateBinDir ? { OA_TICKET_ID: ticket.id } : {}),
+        };
+        return Object.keys(extraEnv).length > 0 ? { extraEnv } : {};
+      })(),
     });
   },
+  ...(claudeAccounts.enabled
+    ? {
+        accounts: {
+          size: claudeAccounts.accounts.length,
+          pick: (current?: string) => claudeAccounts.pick(current),
+          markLimited: (account: string | undefined, reason: string) => claudeAccounts.markLimited(account, reason),
+          transferSession: (sessionId: string, from: string | undefined, to: string) =>
+            claudeAccounts.transferSession(sessionId, from, to),
+        },
+      }
+    : {}),
   verify: (ticket, mainResult) => ticketVerifier.verify(ticket, mainResult),
   // Commit only what the gate passed, and only locally — never push.
   ...(ticketCommitter ? { commitWork: (ticket) => ticketCommitter.commit(ticket) } : {}),
@@ -1160,6 +1205,13 @@ usagePoller.subscribe(() => {
   if (usage) broadcaster.broadcast({ type: 'system:usage', usage });
 });
 usagePoller.start();
+// The header poller already reads the default login's `/usage`; feed it to the
+// rotation instead of asking twice. The pool polls the other accounts itself.
+if (claudeAccounts.enabled && claudeAccounts.accounts.some((a) => a.configDir === null)) {
+  const defaultName = claudeAccounts.accounts.find((a) => a.configDir === null)?.name ?? DEFAULT_ACCOUNT_NAME;
+  usagePoller.subscribe((snapshot) => claudeAccounts.noteUsage(defaultName, snapshot));
+}
+claudeAccounts.start();
 const CODEX_LIVE_USAGE_MS = 15 * 60_000;
 let codexLogUsage: import('@open-alive/core').CodexUsage | null = null;
 let codexLiveUsage: import('@open-alive/core').CodexUsage | null = null;
@@ -1242,6 +1294,7 @@ process.on('SIGINT', () => {
   despawnTimers.clear();
   metricsPoller.stop();
   usagePoller.stop();
+  claudeAccounts.stop();
   clearInterval(codexUsageTimer);
   clearInterval(codexLiveUsageTimer);
   stopWorkerLoop();

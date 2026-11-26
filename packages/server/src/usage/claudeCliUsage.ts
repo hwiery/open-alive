@@ -82,11 +82,13 @@ const runClaude: ClaudeCliRunner = async (args, env) => {
 export async function fetchClaudeUsageViaCli(
   run: ClaudeCliRunner = runClaude,
   now: () => number = Date.now,
+  extraEnv: Record<string, string> = {},
 ): Promise<UsageLimitsSnapshot | null> {
   try {
     // Launched from a Claude Code session the child would think it is nested.
+    // `extraEnv` selects another account (CLAUDE_CONFIG_DIR, see claudeAccounts.ts).
     const { CLAUDECODE: _nested, ...inherited } = process.env;
-    const env: NodeJS.ProcessEnv = { ...inherited, PATH: augmentPath(process.env.PATH), TZ: 'UTC' };
+    const env: NodeJS.ProcessEnv = { ...inherited, ...extraEnv, PATH: augmentPath(process.env.PATH), TZ: 'UTC' };
     const parsed = JSON.parse(await run(CLI_ARGS, env)) as unknown;
     const messages = Array.isArray(parsed) ? parsed : [parsed];
     const result = messages.find((m): m is { type: string; is_error?: unknown; result?: unknown } => m?.type === 'result');

@@ -124,6 +124,7 @@ rm -rf ~/.open-alive       # optional: all local data (events, tickets, tokens, 
 | `open-alive logs` | Last 50 server log lines / 최근 로그 |
 | `open-alive doctor` | Detect agent runtimes (`--json`) / 런타임 점검 |
 | `open-alive token new\|list\|revoke` | Device tokens for remote access / 원격 접속 토큰 |
+| `open-alive account add <name>\|list` | Extra Claude logins for ticket account rotation / 티켓 계정 로테이션용 추가 로그인 |
 | `open-alive autostart enable\|disable\|status` | macOS launchd agent / macOS 자동 시작 |
 | `open-alive version` | Installed version / 버전 |
 
@@ -140,6 +141,8 @@ All settings are optional and live in `~/.open-alive/.env` (`KEY=VALUE` per line
 | `OPEN_ALIVE_AUTO_COMMIT` | `1` | After a ticket passes verification, commit its changes in the ticket's git repo. `0` disables |
 | `OPEN_ALIVE_CLAUDE_TUI` | `default` | Claude Code `tui` setting for Claude tabs in the dashboard terminal (`--settings '{"tui":…}'`). `default` keeps xterm scrollback and its scrollbar; `inherit` uses your own `~/.claude/settings.json` (e.g. `fullscreen`, which draws on the alternate screen and leaves the tab without a scrollbar). Applies to newly opened tabs |
 | `OPEN_ALIVE_TICKET_CONCURRENCY` | built-in | Max tickets running at once |
+| `OA_CLAUDE_ACCOUNTS` | — | Claude accounts tickets may run on, in order, e.g. `default,alt1`. `default` is your current login, `name` is `~/.claude-<name>`, `name=/abs/dir` any config dir. When a local ticket's account runs out of usage, the session continues on the next account with `--resume`. Fewer than two = off. Set up with `open-alive account add <name>` |
+| `OA_CLAUDE_ACCOUNT_SWITCH_AT` | `99` | Percent of a 5h or 7-day window at which an account stops taking new ticket runs (checked from `/usage` every 15 min) |
 | `LITELLM_BASE_URL` | `http://localhost:4000` | OpenAI-compatible gateway for sub-agent delegation and review panels |
 | `LITELLM_KEY` | — | Gateway key — optional for keyless gateways such as Ollama (`LITELLM_BASE_URL` alone is enough). With neither set, tickets run without delegation or panels |
 | `OA_DELEGATE_MODEL` | from `models.json` | Default model for `oa-delegate` |
@@ -150,6 +153,20 @@ All settings are optional and live in `~/.open-alive/.env` (`KEY=VALUE` per line
 
 Process environment values win over `~/.open-alive/.env`: a `LITELLM_BASE_URL` exported in your shell overrides what you save in **Settings → Backend** after the next restart.
 셸에 export 한 `LITELLM_BASE_URL` 등은 `.env` 보다 우선하므로, 대시보드에서 저장한 값도 재시작 후에는 셸 값으로 돌아갑니다.
+
+### Claude account rotation / Claude 계정 로테이션
+
+```bash
+open-alive account add alt1     # sign in to another Claude account (browser)
+open-alive account list         # check each login
+open-alive restart
+```
+
+Each account is a Claude Code config directory (`~/.claude-<name>`) with its own login. `account add` links `projects/`, `settings.json` (with the open-alive hooks), `CLAUDE.md`, skills, agents, commands and plugins from `~/.claude`, so a ticket behaves the same on every account and `--resume` finds the session, and copies your user MCP servers.
+When a running ticket stops with Claude's "You've hit your limit" message, its account is benched until the reset and the ticket resumes on the next account (recorded on the ticket). A transient 429 does not switch. Accounts at `OA_CLAUDE_ACCOUNT_SWITCH_AT` (99%) take no new runs. Applies to local Claude tickets only: dashboard terminals, SSH and Codex tickets are not switched.
+The first turn on the new account re-reads the whole context (prompt caches are per account). Spreading work across several subscriptions may conflict with Anthropic's terms for your plan; check them and use accounts you own.
+
+계정마다 로그인이 따로인 설정 폴더(`~/.claude-<이름>`)를 둡니다. 실행 중인 티켓이 사용량 한도로 멈추면 그 계정은 리셋까지 쉬게 하고, 같은 세션을 다음 계정에서 `--resume` 으로 이어 갑니다. 일시적인 429 에서는 바꾸지 않고, 5시간·7일 창이 99% 이상인 계정은 새 실행을 받지 않습니다. 로컬 Claude 티켓에만 적용됩니다. 여러 구독에 나눠 쓰는 것은 요금제 약관과 맞지 않을 수 있으니 확인하고 본인 계정으로 쓰세요.
 
 ### Model catalogue (`models.json`) / 모델 카탈로그
 

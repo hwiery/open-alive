@@ -21,6 +21,13 @@ export type AgentQuotaReason = Extract<TicketFailureReason, 'usage-limit' | 'mod
 const USAGE_LIMIT_RE =
   /usage limit reached|hit your limit|out of extra usage|spend limit reached|usage credit limit|credit balance (?:is )?too low|rate_limit_error|rate limited|api error:? 429|429 too many requests|limit reached[^\n]{0,40}resets?/i;
 
+/**
+ * The subset that means the subscription window itself is spent (as opposed to
+ * a transient 429 or an API-key spend cap). Only this moves a ticket to
+ * another account; a short rate limit clears by itself.
+ */
+const WINDOW_SPENT_RE = /usage limit reached|hit your (?:session |weekly |opus |sonnet )?limit|out of extra usage|limit reached[^\n]{0,40}resets?/i;
+
 const MODEL_UNAVAILABLE_RE =
   /issue with the selected model|model[_ ]not[_ ]found|not_found_error[^\n]{0,80}model|(?:do not|don't) have access to (?:this |the )?model|invalid model/i;
 
@@ -31,6 +38,10 @@ export interface AgentQuotaError {
   reason: AgentQuotaReason;
   /** One-line Korean summary for the ticket card / API. */
   summary: string;
+  /** The CLI's own matching line, trimmed (for logs and account benches). */
+  detail: string;
+  /** usage-limit only: the subscription window is spent (not a transient rate limit). */
+  windowSpent?: boolean;
 }
 
 /** The first line of `text` matching `re`, collapsed and trimmed. */
@@ -52,6 +63,8 @@ export function classifyAgentQuotaError(texts: ReadonlyArray<string | null | und
   if (usage) {
     return {
       reason: 'usage-limit',
+      detail: usage,
+      windowSpent: WINDOW_SPENT_RE.test(text),
       summary: `사용량 한도에 도달해 에이전트가 중단됨 — 한도가 초기화된 뒤 다시 실행하세요: ${usage}`,
     };
   }
@@ -59,6 +72,7 @@ export function classifyAgentQuotaError(texts: ReadonlyArray<string | null | und
   if (model) {
     return {
       reason: 'model-unavailable',
+      detail: model,
       summary: `요청한 모델을 이 계정에서 쓸 수 없어 실행되지 않음 — 다른 실행 프로필을 고르세요: ${model}`,
     };
   }

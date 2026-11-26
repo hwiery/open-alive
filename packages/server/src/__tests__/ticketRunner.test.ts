@@ -591,3 +591,159 @@ describe('TicketRunner injected validateCwd (location-aware)', () => {
     expect(store.get(t.id)?.state).toBe('done');
   });
 });
+
+describe('TicketRunner Claude account rotation', () => {
+  const limitOutcome = (sessionId: string | null = 'sess-a'): MainOutcome => ({
+    exitCode: 1,
+    result: { result: "You've hit your limit · resets 3pm (Asia/Seoul)", isError: true },
+    sessionId,
+    stderr: '',
+  });
+
+  /** Two-account fake: `default` and `alt`, benched by markLimited. */
+  function rotation(names = ['default', 'alt']) {
+    const benched = new Set<string>();
+    const transfers: Array<[string, string | undefined, string]> = [];
+    const marks: Array<string | undefined> = [];
+    return {
+      benched,
+      transfers,
+      marks,
+      api: {
+        size: names.length,
+        pick: (current?: string) =>
+          current && names.includes(current) && !benched.has(current) ? current : names.find((n) => !benched.has(n)),
+        markLimited: (account: string | undefined) => {
+          marks.push(account);
+          benched.add(account ?? 'default');
+        },
+        transferSession: async (sid: string, from: string | undefined, to: string) => {
+          transfers.push([sid, from, to]);
+        },
+      },
+    };
+  }
+
+  it('resumes the same session on the next account when the first is spent', async () => {
+    const rot = rotation();
+    const calls: Array<{ account?: string; opts?: SpawnMainOpts }> = [];
+    const { runner } = makeRunner({
+      accounts: rot.api,
+      spawnMain: (ticket, opts) => {
+        calls.push({ account: ticket.claudeAccount, opts });
+        return { kill() {}, done: Promise.resolve(calls.length === 1 ? limitOutcome() : okOutcome('finished')) };
+      },
+    });
+    const t = await store.create({ goal: 'g', cwd: '/repo' });
+    runner.enqueue(t);
+    await until(() => store.get(t.id)?.state === 'done');
+
+    expect(calls.map((c) => c.account)).toEqual(['default', 'alt']);
+    expect(calls[1]!.opts?.resumeSessionId).toBe('sess-a');
+    expect(calls[1]!.opts?.prompt).toContain('다른 계정');
+    expect(rot.marks).toEqual(['default']);
+    expect(rot.transfers).toEqual([['sess-a', 'default', 'alt']]);
+    const done = store.get(t.id)!;
+    expect(done.claudeAccount).toBe('alt');
+    expect(done.accountHandoffs).toEqual([
+      expect.objectContaining({ from: 'default', to: 'alt', reason: 'usage-limit', resumed: true }),
+    ]);
+    // The slot is released right after the terminal write, not with it.
+    await until(() => runner.activeCount() === 0);
+  });
+
+  it('restarts from the goal when the spent run never announced a session', async () => {
+    const rot = rotation();
+    const calls: Array<SpawnMainOpts | undefined> = [];
+    const { runner } = makeRunner({
+      accounts: rot.api,
+      spawnMain: (_t, opts) => {
+        calls.push(opts);
+        return { kill() {}, done: Promise.resolve(calls.length === 1 ? limitOutcome(null) : okOutcome()) };
+      },
+    });
+    const t = await store.create({ goal: 'g', cwd: '/repo' });
+    runner.enqueue(t);
+    await until(() => store.get(t.id)?.state === 'done');
+    expect(calls[1]?.resumeSessionId).toBeUndefined();
+    expect(calls[1]?.prompt).toBeUndefined();
+    expect(store.get(t.id)!.accountHandoffs?.[0]).toMatchObject({ resumed: false });
+  });
+
+  it('fails as usage-limit once every account is spent', async () => {
+    const rot = rotation();
+    let n = 0;
+    const { runner } = makeRunner({
+      accounts: rot.api,
+      spawnMain: () => {
+        n++;
+        return { kill() {}, done: Promise.resolve(limitOutcome()) };
+      },
+    });
+    const t = await store.create({ goal: 'g', cwd: '/repo' });
+    runner.enqueue(t);
+    await until(() => store.get(t.id)?.state === 'failed');
+    expect(n).toBe(2);
+    expect(store.get(t.id)!.failureReason).toBe('usage-limit');
+    expect(store.get(t.id)!.accountHandoffs).toHaveLength(1);
+  });
+
+  it('does not hop accounts on a transient rate limit', async () => {
+    const rot = rotation();
+    let n = 0;
+    const { runner } = makeRunner({
+      accounts: rot.api,
+      spawnMain: () => {
+        n++;
+        return {
+          kill() {},
+          done: Promise.resolve({ exitCode: 1, result: { result: 'API Error: 429 Too Many Requests', isError: true }, sessionId: 's', stderr: '' }),
+        };
+      },
+    });
+    const t = await store.create({ goal: 'g', cwd: '/repo' });
+    runner.enqueue(t);
+    await until(() => store.get(t.id)?.state === 'failed');
+    expect(n).toBe(1);
+    expect(rot.marks).toEqual([]);
+    expect(store.get(t.id)!.failureReason).toBe('usage-limit');
+  });
+
+  it('leaves SSH and Codex tickets alone', async () => {
+    const rot = rotation();
+    const seen: Array<string | undefined> = [];
+    const { runner } = makeRunner({
+      accounts: rot.api,
+      spawnMain: (ticket) => {
+        seen.push(ticket.claudeAccount);
+        return { kill() {}, done: Promise.resolve(limitOutcome()) };
+      },
+    });
+    const ssh = await store.create({ goal: 'g', cwd: '/repo', location: { kind: 'ssh', ssh: { host: 'h' } } } as never);
+    runner.enqueue(ssh);
+    await until(() => store.get(ssh.id)?.state === 'failed');
+    expect(seen).toEqual([undefined]);
+    expect(rot.marks).toEqual([]);
+  });
+
+  it('moves a reply off a spent account before resuming', async () => {
+    const rot = rotation();
+    const calls: Array<string | undefined> = [];
+    const { runner } = makeRunner({
+      accounts: rot.api,
+      spawnMain: (ticket) => {
+        calls.push(ticket.claudeAccount);
+        const out = calls.length === 1 ? okOutcome('DECISION: A or B?') : okOutcome('done');
+        return { kill() {}, done: Promise.resolve(out) };
+      },
+    });
+    const t = await store.create({ goal: 'g', cwd: '/repo' });
+    runner.enqueue(t);
+    await until(() => store.get(t.id)?.state === 'decision');
+    rot.benched.add('default'); // spent while the ticket waited for a human
+    await runner.reply(t.id, 'A');
+    await until(() => store.get(t.id)?.state === 'done');
+    expect(calls).toEqual(['default', 'alt']);
+    expect(rot.transfers).toEqual([['sess', 'default', 'alt']]);
+  });
+});

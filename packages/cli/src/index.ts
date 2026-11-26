@@ -29,6 +29,10 @@ import { homedir } from 'node:os';
 import { runSetup, resolvePort, writePrivateFile } from './setup.js';
 import { isPortInUse } from './portCheck.js';
 import { windowsStartupScript } from './windowsStartup.js';
+import {
+  accountDir, addAccountToEnv, claudeJsonFor, copyMcpServers, linkSharedEntries, listAccounts,
+  mainClaudeDir, validateAccountName,
+} from './accounts.js';
 
 const ALIVE_DIR = join(homedir(), '.open-alive');
 const PID_FILE = join(ALIVE_DIR, 'server.pid');
@@ -553,6 +557,67 @@ switch (command) {
     break;
   }
 
+  case 'account': {
+    const sub = process.argv[3] ?? 'list';
+    if (sub === 'list') {
+      const names = listAccounts(readEnvFile());
+      if (names.length < 2) {
+        console.log('Account rotation is off (needs two or more). Add one: open-alive account add <name>');
+      }
+      for (const entry of names) {
+        const [name, explicit] = entry.split('=');
+        const dir = explicit ?? (name === 'default' ? null : accountDir(name!));
+        let state = 'unknown';
+        try {
+          const out = execFileSync('claude', ['auth', 'status', '--json'], {
+            env: { ...process.env, PATH: augmentPath(process.env.PATH), ...(dir ? { CLAUDE_CONFIG_DIR: dir } : {}) },
+            encoding: 'utf8',
+            timeout: 20_000,
+            stdio: ['ignore', 'pipe', 'ignore'],
+          });
+          const s = JSON.parse(out) as { loggedIn?: boolean; email?: string; subscriptionType?: string };
+          state = s.loggedIn ? `${s.email ?? 'signed in'}${s.subscriptionType ? ` (${s.subscriptionType})` : ''}` : 'not signed in';
+        } catch {
+          // `claude` missing or the call failed: leave unknown
+        }
+        console.log(`  ${name}  ${dir ?? mainClaudeDir()}  ${state}`);
+      }
+      break;
+    }
+    if (sub === 'add') {
+      const name = process.argv[4];
+      const invalid = validateAccountName(name);
+      if (invalid) {
+        console.error(invalid);
+        process.exit(1);
+      }
+      const dir = accountDir(name!);
+      const main = mainClaudeDir();
+      const linked = linkSharedEntries(main, dir);
+      console.log(`Account dir: ${dir}`);
+      if (linked.length > 0) console.log(`Shared from ${main}: ${linked.join(', ')}`);
+      console.log('\nSign in with the OTHER Claude account in the browser that opens.\n');
+      const login = crossSpawn.sync('claude', ['auth', 'login'], {
+        stdio: 'inherit',
+        env: { ...process.env, PATH: augmentPath(process.env.PATH), CLAUDE_CONFIG_DIR: dir },
+      });
+      if (login.status !== 0) {
+        console.error('\nSign-in did not finish. Run again: open-alive account add ' + name);
+        process.exit(1);
+      }
+      const copied = copyMcpServers(claudeJsonFor(process.env.CLAUDE_CONFIG_DIR?.trim() || null), claudeJsonFor(dir));
+      if (copied > 0) console.log(`Copied ${copied} user MCP server(s).`);
+      writeEnvFile(addAccountToEnv(readEnvFile(), name!));
+      console.log(`\nAdded "${name}" to OA_CLAUDE_ACCOUNTS in ~/.open-alive/.env.`);
+      console.log('Check both logins are different accounts: open-alive account list');
+      console.log('Restart the server for it to take effect: open-alive restart');
+      break;
+    }
+    console.error(`Unknown account subcommand "${sub}". Use add <name>|list.`);
+    process.exit(1);
+    break;
+  }
+
   case 'autostart': {
     const sub = process.argv[3] ?? 'status';
     if (!['enable', 'disable', 'status'].includes(sub)) {
@@ -620,6 +685,8 @@ Usage:
   open-alive status       Show server status
   open-alive token        new <label>|list|revoke <label> — device tokens for
                             remote access from the app
+  open-alive account      add <name>|list — extra Claude logins; a ticket whose
+                            account runs out of usage resumes on the next one
   open-alive autostart    enable|disable|status — macOS launchd plist
                             (respawns the server on every exit)
   open-alive doctor       Detect installed agent runtimes and adapter status
