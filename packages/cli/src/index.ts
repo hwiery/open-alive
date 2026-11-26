@@ -116,6 +116,9 @@ function serverEntryPath(): string {
 // macOS launchd plist for the unified open-alive server. As of D-048+
 // the absorbed open-alive-prompt subsystem (prompt API + worker queue) runs
 // inside this same Node process, so one plist covers everything.
+// KeepAlive is unconditional: launchd respawns the server on any exit, clean
+// or not. An explicit `open-alive stop` boots the job out instead of killing
+// the process, so stopping still sticks until `start` or the next login.
 
 const LAUNCHD_LABEL = 'com.openalive.server';
 const LAUNCHD_FILE = `${homedir()}/Library/LaunchAgents/${LAUNCHD_LABEL}.plist`;
@@ -142,10 +145,7 @@ function buildOpenAlivePlist(): string {
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
-  <dict>
-    <key>SuccessfulExit</key>
-    <false/>
-  </dict>
+  <true/>
   <key>ThrottleInterval</key>
   <integer>10</integer>
   <key>WorkingDirectory</key>
@@ -184,6 +184,22 @@ const WINDOWS_STARTUP_FILE = join(
   process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'),
   'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'open-alive.cmd',
 );
+
+function launchdTarget(): string {
+  return `gui/${uidShell()}/${LAUNCHD_LABEL}`;
+}
+
+/** True when the autostart job is loaded into launchd (running or waiting to respawn). */
+function launchdLoaded(): boolean {
+  return process.platform === 'darwin' && tryRun('launchctl', ['print', launchdTarget()]);
+}
+
+/** Load the installed plist; launchd starts it right away (RunAtLoad). */
+function launchdBootstrap(): boolean {
+  return process.platform === 'darwin' && existsSync(LAUNCHD_FILE)
+    && (tryRun('launchctl', ['bootstrap', `gui/${uidShell()}`, LAUNCHD_FILE])
+      || tryRun('launchctl', ['load', '-w', LAUNCHD_FILE]));
+}
 
 function windowsAutostart(sub: 'enable' | 'disable' | 'status'): void {
   if (sub === 'enable') {
@@ -291,6 +307,16 @@ async function startServer(argv: readonly string[]): Promise<void> {
   // "expose this server" is always something someone typed.
   const remote = argv.includes('--remote');
   const host = flagValue(argv, '--host');
+
+  // With autostart installed, launchd owns the server so it is respawned on
+  // every exit. Flags like --remote come from ~/.open-alive/.env in that mode.
+  if (!readPid() && (launchdLoaded() || launchdBootstrap())) {
+    console.log('open-alive server is running under launchd (autostart).');
+    console.log(`  Dashboard: ${url}`);
+    console.log(`  Logs:      ${join(ALIVE_DIR, 'autostart-server.log')}`);
+    if (!noOpen) openBrowser(url);
+    return;
+  }
 
   const existingPid = readPid();
   if (existingPid) {
@@ -430,6 +456,12 @@ switch (command) {
   }
 
   case 'stop': {
+    // KeepAlive would respawn a killed launchd server, so unload the job.
+    if (launchdLoaded()) {
+      tryRun('launchctl', ['bootout', launchdTarget()]);
+      console.log('open-alive server stopped (launchd job unloaded until "open-alive start" or next login).');
+      break;
+    }
     const pid = readPid();
     if (!pid) {
       console.log('open-alive server is not running.');
@@ -438,6 +470,23 @@ switch (command) {
     process.kill(pid, 'SIGINT');
     try { unlinkSync(PID_FILE); } catch {}
     console.log(`open-alive server stopped (PID: ${pid}).`);
+    break;
+  }
+
+  case 'restart': {
+    if (launchdLoaded()) {
+      tryRun('launchctl', ['kickstart', '-k', launchdTarget()]);
+      console.log('open-alive server restarted (launchd).');
+      break;
+    }
+    const pid = readPid();
+    if (pid) {
+      process.kill(pid, 'SIGINT');
+      try { unlinkSync(PID_FILE); } catch {}
+      // Give the old process a moment to release the port.
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    await startServer(args);
     break;
   }
 
@@ -567,10 +616,12 @@ Usage:
                              the interface. Remote mode needs a device token and
                              OPEN_ALIVE_TICKET_ROOTS, or the server refuses to boot.)
   open-alive stop         Stop the server
+  open-alive restart      Restart the server (via launchd when autostart is on)
   open-alive status       Show server status
   open-alive token        new <label>|list|revoke <label> — device tokens for
                             remote access from the app
   open-alive autostart    enable|disable|status — macOS launchd plist
+                            (respawns the server on every exit)
   open-alive doctor       Detect installed agent runtimes and adapter status
                             (pass --json for machine-readable output)
   open-alive logs         Show recent server logs

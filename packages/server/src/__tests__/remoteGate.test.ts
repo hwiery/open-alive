@@ -236,6 +236,13 @@ describe('remote mode on — local full-access token', () => {
     expect((await fetch(`${base}/api/fs/browse?dir=${dir}`, { headers: auth(LOCAL) })).status).toBe(200);
   });
 
+  it('says why a folder could not be listed', async () => {
+    const missing = `${tmpdir()}/open-alive-no-such-folder`;
+    const res = await fetch(`${base}/api/fs/browse?dir=${encodeURIComponent(missing)}`, { headers: auth(LOCAL) });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ code: 'notFound', path: missing });
+  });
+
   it('bootstraps the dashboard through ?token=', async () => {
     expect((await fetch(`${base}/?token=${LOCAL}`)).status).not.toBe(401);
   });

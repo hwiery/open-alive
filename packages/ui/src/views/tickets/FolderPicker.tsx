@@ -26,24 +26,46 @@ interface FolderPickerProps {
   onClose: () => void;
 }
 
+interface BrowseResponse {
+  path?: string;
+  dirs?: { name: string; path: string }[];
+  code?: string;
+}
+
+/** Which `tickets.browseError.*` message explains a failed listing. */
+function browseFailure(status: number, code?: string): string {
+  if (status === 401 || status === 403) return 'localOnly';
+  return code === 'notFound' || code === 'denied' || code === 'notDir' ? code : 'unknown';
+}
+
 export function FolderPicker({ quick, onSelect, onClose }: FolderPickerProps) {
   const { t } = useTranslation();
   const [dirs, setDirs] = useState<{ name: string; path: string }[]>([]);
   const [currentPath, setCurrentPath] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [recent, setRecent] = useState<string[]>(() => loadRecentFolders());
 
-  const browse = useCallback((dir: string) => {
-    setLoading(true);
-    fetch(`${API_BASE}/api/fs/browse?dir=${encodeURIComponent(dir)}`)
-      .then((r) => r.json())
-      .then((data: { path: string; dirs: { name: string; path: string }[] }) => {
-        setCurrentPath(data.path);
-        setDirs(data.dirs);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+  const browse = useCallback(
+    (dir: string) => {
+      setLoading(true);
+      setError(null);
+      fetch(`${API_BASE}/api/fs/browse?dir=${encodeURIComponent(dir)}`)
+        .then(async (r) => {
+          const data = (await r.json().catch(() => ({}))) as BrowseResponse;
+          if (!r.ok || !data.dirs) {
+            // The last good folder stays listed, so a failed step can be stepped back from.
+            setError(t(`tickets.browseError.${browseFailure(r.status, data.code)}`, { path: data.path ?? dir }));
+            return;
+          }
+          setCurrentPath(data.path ?? dir);
+          setDirs(data.dirs);
+        })
+        .catch(() => setError(t('tickets.browseError.network')))
+        .finally(() => setLoading(false));
+    },
+    [t],
+  );
 
   useEffect(() => {
     browse('~');
@@ -69,6 +91,7 @@ export function FolderPicker({ quick, onSelect, onClose }: FolderPickerProps) {
         browsePath={currentPath}
         browseDirs={dirs}
         browseLoading={loading}
+        browseError={error}
         onBrowse={browse}
       />
     </FolderPickerDialog>

@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import '@open-alive/i18n';
+import i18n from '@open-alive/i18n';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MobileSettingsPanel } from '../components/MobileSettingsPanel.tsx';
@@ -76,5 +76,51 @@ describe('MobileSettingsPanel', () => {
     expect(saved).toMatchObject({ remoteEnabled: true, ticketRoots: ['/work'] });
     expect(await screen.findByTestId('restart-required')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /지금 재시작|Restart now/ })).toBeInTheDocument();
+  });
+
+  it('shows a refused save next to the Save button, translated from its code', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === 'POST'
+        ? ({ ok: false, status: 400, json: async () => ({ error: 'remote access needs a device token', code: 'needToken' }) } as Response)
+        : ({ ok: true, status: 200, json: async () => base } as Response),
+    ));
+    render(<MobileSettingsPanel active />);
+    fireEvent.click(await screen.findByLabelText(/원격 접속 사용|Use remote access/));
+    fireEvent.click(screen.getByRole('button', { name: /^(저장|Save)$/ }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(i18n.t('settings.mobile.errors.needToken'));
+    expect(screen.getByTestId('mobile-step-3')).toContainElement(alert);
+  });
+
+  it('shows a refused token next to the token form and keeps unsaved choices', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === 'POST'
+        ? ({ ok: false, status: 400, json: async () => ({ error: 'exists', code: 'duplicateLabel', params: { name: 'phone' } }) } as Response)
+        : ({ ok: true, status: 200, json: async () => base } as Response),
+    ));
+    render(<MobileSettingsPanel active />);
+    const remote = await screen.findByLabelText(/원격 접속 사용|Use remote access/);
+    fireEvent.click(remote);
+    fireEvent.click(screen.getByRole('button', { name: /토큰 만들기|Create token/ }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(i18n.t('settings.mobile.errors.duplicateLabel', { name: 'phone' }));
+    expect(screen.getByTestId('mobile-step-2')).toContainElement(alert);
+    expect(remote).toBeChecked();
+  });
+
+  it('keeps unsaved choices when a new token refreshes the panel', async () => {
+    stub(base, (path) => (path.endsWith('/tokens') ? { label: 'phone', token: 'abc' } : base));
+    render(<MobileSettingsPanel active />);
+    const remote = await screen.findByLabelText(/원격 접속 사용|Use remote access/);
+    fireEvent.click(remote);
+    fireEvent.click(screen.getByRole('button', { name: /토큰 만들기|Create token/ }));
+    await screen.findByTestId('fresh-token');
+    expect(remote).toBeChecked();
+  });
+
+  it('says the server is unreachable when loading fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+    render(<MobileSettingsPanel active />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(i18n.t('settings.mobile.errors.network'));
   });
 });

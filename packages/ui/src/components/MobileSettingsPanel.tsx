@@ -30,10 +30,24 @@ const LINKS = {
 const TERMINAL_LEVELS: TerminalLevel[] = ['off', 'watch', 'input', 'shell'];
 const RESTART_COMMAND = 'open-alive stop && open-alive start';
 
+/** A refused request; `code` selects the translated `settings.mobile.errors.*` message. */
+class ApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  readonly params?: Record<string, string>;
+
+  constructor(message: string, status: number, code?: string, params?: Record<string, string>) {
+    super(message);
+    this.status = status;
+    this.code = code;
+    this.params = params;
+  }
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, init);
-  const body = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+  const body = (await res.json().catch(() => ({}))) as T & { error?: string; code?: string; params?: Record<string, string> };
+  if (!res.ok) throw new ApiError(body.error ?? `HTTP ${res.status}`, res.status, body.code, body.params);
   return body;
 }
 
@@ -65,9 +79,10 @@ function useQr(text: string | null): string | null {
  * 1. Tailscale on both devices · 2. a device token · 3. remote access · 4. open it on the phone.
  */
 export function MobileSettingsPanel({ active }: { active: boolean }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [view, setView] = useState<MobileView | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // `scope` is the action that failed: the message is shown next to it, not at the top of a long panel.
+  const [error, setError] = useState<{ scope: string; message: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [label, setLabel] = useState('phone');
   const [fresh, setFresh] = useState<{ label: string; token: string } | null>(null);
@@ -75,16 +90,34 @@ export function MobileSettingsPanel({ active }: { active: boolean }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const next = await api<MobileView>('/api/settings/mobile');
-      setView(next);
-      setDraft(next.saved);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, []);
+  const describe = useCallback(
+    (e: unknown): string => {
+      if (e instanceof ApiError) {
+        const code = e.code ?? (e.status === 401 || e.status === 403 ? 'localOnly' : null);
+        const key = `settings.mobile.errors.${code}`;
+        return code && i18n.exists(key) ? t(key, e.params) : e.message;
+      }
+      // fetch() itself only rejects when the server could not be reached.
+      if (e instanceof TypeError) return t('settings.mobile.errors.network');
+      return e instanceof Error ? e.message : String(e);
+    },
+    [t, i18n],
+  );
+
+  // keepDraft: a refresh mid-edit (new token, re-check) must not discard unsaved choices.
+  const load = useCallback(
+    async (keepDraft = false) => {
+      try {
+        const next = await api<MobileView>('/api/settings/mobile');
+        setView(next);
+        setDraft((d) => (keepDraft && d ? d : next.saved));
+        setError(null);
+      } catch (e) {
+        setError({ scope: 'load', message: describe(e) });
+      }
+    },
+    [describe],
+  );
 
   useEffect(() => {
     if (active) void load();
@@ -96,11 +129,16 @@ export function MobileSettingsPanel({ active }: { active: boolean }) {
     try {
       await fn();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError({ scope: key.split(':')[0]!, message: describe(e) });
     } finally {
       setBusy(null);
     }
   };
+
+  const errorFor = (...scopes: string[]) =>
+    error && scopes.includes(error.scope) ? (
+      <div role="alert" style={{ ...hint, color: 'var(--accent-red)' }}>{error.message}</div>
+    ) : null;
 
   const copy = (text: string, key: string) => {
     void navigator.clipboard?.writeText(text).then(() => {
@@ -117,7 +155,7 @@ export function MobileSettingsPanel({ active }: { active: boolean }) {
   const freshQr = useQr(freshUrl);
 
   if (!view || !draft) {
-    return <div style={hint}>{error ?? t('settings.mobile.loading')}</div>;
+    return errorFor('load') ?? <div style={hint}>{t('settings.mobile.loading')}</div>;
   }
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(view.saved);
@@ -147,7 +185,7 @@ export function MobileSettingsPanel({ active }: { active: boolean }) {
   return (
     <div data-testid="mobile-settings" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={hint}>{t('settings.mobile.intro')}</div>
-      {error && <div role="alert" style={{ ...hint, color: 'var(--accent-red)' }}>{error}</div>}
+      {errorFor('load')}
 
       {/* 1. Tailscale */}
       <Step n={1} title={t('settings.mobile.step1.title')} status={tsState === 'ok' ? 'ok' : 'todo'} statusText={t(`settings.mobile.step1.state.${tsState}`, { ip: ip ?? '', dns: view.tailscale.dnsName ?? '' })}>
@@ -174,7 +212,7 @@ export function MobileSettingsPanel({ active }: { active: boolean }) {
           </li>
         </ol>
         <div>
-          <button type="button" style={ghost} disabled={busy !== null} onClick={() => void load()}>{t('settings.mobile.recheck')}</button>
+          <button type="button" style={ghost} disabled={busy !== null} onClick={() => void load(true)}>{t('settings.mobile.recheck')}</button>
         </div>
       </Step>
 
@@ -217,13 +255,14 @@ export function MobileSettingsPanel({ active }: { active: boolean }) {
                   body: JSON.stringify({ label: label.trim() }),
                 });
                 setFresh(created);
-                await load();
+                await load(true);
               })
             }
           >
             {t('settings.mobile.step2.create')}
           </button>
         </div>
+        {errorFor('create', 'revoke')}
         {fresh && (
           <div data-testid="fresh-token" style={{ ...box, borderColor: 'var(--accent-orange, #d29922)' }}>
             <div style={{ fontSize: 12, fontWeight: 600 }}>{t('settings.mobile.step2.freshTitle', { name: fresh.label })}</div>
@@ -271,6 +310,7 @@ export function MobileSettingsPanel({ active }: { active: boolean }) {
         <div>
           <button type="button" style={ghost} onClick={() => setPickerOpen(true)}>{t('settings.mobile.step3.addRoot')}</button>
         </div>
+        {errorFor('roots')}
 
         <div style={field}>{t('settings.mobile.step3.bind')}</div>
         {(['all', 'tailscale'] as const).map((b) => (
@@ -295,6 +335,7 @@ export function MobileSettingsPanel({ active }: { active: boolean }) {
           <button type="button" style={primary} disabled={busy !== null || !dirty} onClick={save}>{t('settings.mobile.save')}</button>
           {dirty && <span style={hint}>{t('settings.mobile.unsaved')}</span>}
         </div>
+        {errorFor('save')}
         {view.restartRequired && (
           <div data-testid="restart-required" style={{ ...box, borderColor: 'var(--accent-blue)' }}>
             <div style={{ fontSize: 12 }}>{t('settings.mobile.restartRequired')}</div>
@@ -307,6 +348,7 @@ export function MobileSettingsPanel({ active }: { active: boolean }) {
             ) : (
               <code style={mono}>{RESTART_COMMAND}</code>
             )}
+            {errorFor('restart')}
           </div>
         )}
       </Step>
@@ -341,7 +383,14 @@ export function MobileSettingsPanel({ active }: { active: boolean }) {
 
       {pickerOpen && (
         <FolderPicker
-          onSelect={(path) => setDraft((d) => (d && !d.ticketRoots.includes(path) ? { ...d, ticketRoots: [...d.ticketRoots, path] } : d))}
+          onSelect={(path) => {
+            if (draft.ticketRoots.includes(path)) {
+              setError({ scope: 'roots', message: t('settings.mobile.errors.rootDuplicate', { path }) });
+              return;
+            }
+            setError(null);
+            setDraft({ ...draft, ticketRoots: [...draft.ticketRoots, path] });
+          }}
           onClose={() => setPickerOpen(false)}
         />
       )}

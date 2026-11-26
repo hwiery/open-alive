@@ -19,13 +19,16 @@ interface FolderPickerDialogProps {
 export function FolderPickerDialog({ title, currentPath, onPick, onClose, children }: FolderPickerDialogProps) {
   const { t } = useTranslation();
 
-  // Esc closes the picker.
+  // Esc closes the picker only — capture phase, so a modal underneath (Settings)
+  // that also listens on window does not close along with it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      onClose();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [onClose]);
 
   return createPortal(
@@ -38,7 +41,8 @@ export function FolderPickerDialog({ title, currentPath, onPick, onClose, childr
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 1000,
+        // Opens from inside other modals: above Settings (1100) and Onboarding (1150), below system alerts (1200).
+        zIndex: 1160,
       }}
     >
       <div

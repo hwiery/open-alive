@@ -62,9 +62,16 @@ export interface MobileSettingsUpdate {
   terminalLevel?: RemoteTerminalLevel;
 }
 
-/** Bad input; the route maps it to 400. */
+/** Bad input; the route maps it to 400. `code` and `params` let the UI explain it in the user's language. */
 export class MobileSettingsError extends Error {
   readonly name = 'MobileSettingsError';
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly params?: Record<string, string>,
+  ) {
+    super(message);
+  }
 }
 
 export interface MobileSettingsDeps {
@@ -141,16 +148,16 @@ export function createMobileSettings(deps: MobileSettingsDeps): MobileSettings {
       const current = savedFrom(text, tailscale.ip);
       const roots = input.ticketRoots ?? current.ticketRoots;
       for (const root of roots) {
-        if (!isAbsolute(root)) throw new MobileSettingsError(`not an absolute path: ${root}`);
-        if (!isDirectory(root)) throw new MobileSettingsError(`folder does not exist: ${root}`);
+        if (!isAbsolute(root)) throw new MobileSettingsError(`not an absolute path: ${root}`, 'rootNotAbsolute', { path: root });
+        if (!isDirectory(root)) throw new MobileSettingsError(`folder does not exist: ${root}`, 'rootMissing', { path: root });
       }
       const remoteEnabled = input.remoteEnabled ?? current.remoteEnabled;
       // The server refuses to boot in remote mode without these, so refuse to save a config it cannot start with.
-      if (remoteEnabled && roots.length === 0) throw new MobileSettingsError('remote access needs at least one ticket folder');
-      if (remoteEnabled && listDeviceTokens(text).length === 0) throw new MobileSettingsError('remote access needs a device token — create one first');
-      if (input.bind === 'tailscale' && !tailscale.ip) throw new MobileSettingsError('Tailscale is not connected on this computer');
+      if (remoteEnabled && roots.length === 0) throw new MobileSettingsError('remote access needs at least one ticket folder', 'needRoot');
+      if (remoteEnabled && listDeviceTokens(text).length === 0) throw new MobileSettingsError('remote access needs a device token — create one first', 'needToken');
+      if (input.bind === 'tailscale' && !tailscale.ip) throw new MobileSettingsError('Tailscale is not connected on this computer', 'tailscaleOff');
       if (input.terminalLevel !== undefined && !REMOTE_TERMINAL_LEVELS.includes(input.terminalLevel)) {
-        throw new MobileSettingsError('unknown terminal level');
+        throw new MobileSettingsError('unknown terminal level', 'badTerminalLevel');
       }
 
       text = upsertEnvValue(text, 'OPEN_ALIVE_REMOTE', remoteEnabled ? '1' : undefined);
@@ -170,9 +177,9 @@ export function createMobileSettings(deps: MobileSettingsDeps): MobileSettings {
 
     createToken(label) {
       const name = label.trim();
-      if (!LABEL_PATTERN.test(name)) throw new MobileSettingsError('use letters, digits, dot, dash or underscore (max 40)');
+      if (!LABEL_PATTERN.test(name)) throw new MobileSettingsError('use letters, digits, dot, dash or underscore (max 40)', 'badLabel');
       const text = readText(deps.envFile);
-      if (listDeviceTokens(text).some((t) => t.label === name)) throw new MobileSettingsError(`a token named "${name}" already exists`);
+      if (listDeviceTokens(text).some((t) => t.label === name)) throw new MobileSettingsError(`a token named "${name}" already exists`, 'duplicateLabel', { name });
       const token = generate();
       writePrivateFile(deps.envFile, addDeviceToken(text, name, token));
       deps.config.tokens = [...deps.config.tokens, { label: name, value: token }];
@@ -182,9 +189,9 @@ export function createMobileSettings(deps: MobileSettingsDeps): MobileSettings {
     revokeToken(label) {
       const text = readText(deps.envFile);
       const tokens = listDeviceTokens(text);
-      if (!tokens.some((t) => t.label === label)) throw new MobileSettingsError(`no token named "${label}"`);
+      if (!tokens.some((t) => t.label === label)) throw new MobileSettingsError(`no token named "${label}"`, 'unknownToken', { name: label });
       if (truthy(readEnvValue(text, 'OPEN_ALIVE_REMOTE')) && tokens.length === 1) {
-        throw new MobileSettingsError('this is the last token while remote access is on — turn remote access off first, or create another token');
+        throw new MobileSettingsError('this is the last token while remote access is on — turn remote access off first, or create another token', 'lastToken', { name: label });
       }
       writePrivateFile(deps.envFile, revokeDeviceToken(text, label));
       // Takes effect immediately: a lost phone is locked out now, not at the next restart.

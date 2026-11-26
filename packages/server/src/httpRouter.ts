@@ -795,7 +795,7 @@ export function createHttpServer(options: HttpRouterOptions) {
         }
         if (req.method === 'POST' && url.pathname === '/api/settings/mobile/restart') {
           const ok = mobileSettings.restart();
-          sendJson(res, ok ? 202 : 409, ok ? { restarting: true } : { error: 'Restart from the dashboard needs autostart (launchd). Run: open-alive stop && open-alive start' }, req);
+          sendJson(res, ok ? 202 : 409, ok ? { restarting: true } : { error: 'Restart from the dashboard needs autostart (launchd). Run: open-alive stop && open-alive start', code: 'restartUnsupported' }, req);
           return;
         }
         if (req.method === 'DELETE' && tokenMatch) {
@@ -830,7 +830,7 @@ export function createHttpServer(options: HttpRouterOptions) {
         }
       } catch (error) {
         if (error instanceof MobileSettingsError) {
-          sendJson(res, 400, { error: error.message }, req);
+          sendJson(res, 400, { error: error.message, code: error.code, params: error.params }, req);
           return;
         }
         throw error;
@@ -1054,9 +1054,9 @@ export function createHttpServer(options: HttpRouterOptions) {
 
     // GET /api/fs/browse?dir=/path — list directories for folder picker
     if (req.method === 'GET' && url.pathname === '/api/fs/browse') {
+      const rawDir = url.searchParams.get('dir') || '~';
+      const dir = rawDir.startsWith('~') ? pathResolve(homedir(), rawDir.slice(1).replace(/^\//, '')) : pathResolve(rawDir);
       try {
-        const rawDir = url.searchParams.get('dir') || '~';
-        const dir = rawDir.startsWith('~') ? pathResolve(homedir(), rawDir.slice(1).replace(/^\//, '')) : pathResolve(rawDir);
         const entries = await readdir(dir, { withFileTypes: true });
         const dirs: { name: string; path: string }[] = [];
         for (const entry of entries) {
@@ -1066,8 +1066,10 @@ export function createHttpServer(options: HttpRouterOptions) {
         }
         dirs.sort((a, b) => a.name.localeCompare(b.name));
         sendJson(res, 200, { path: dir, dirs, isRoot: dir === '/' }, req);
-      } catch {
-        sendJson(res, 400, { error: 'Cannot read directory' }, req);
+      } catch (error) {
+        const errno = (error as NodeJS.ErrnoException).code;
+        const code = errno === 'ENOENT' ? 'notFound' : errno === 'ENOTDIR' ? 'notDir' : errno === 'EACCES' || errno === 'EPERM' ? 'denied' : 'unknown';
+        sendJson(res, 400, { error: 'Cannot read directory', code, path: dir }, req);
       }
       return;
     }

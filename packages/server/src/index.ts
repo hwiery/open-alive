@@ -876,7 +876,7 @@ const httpServer = createHttpServer({
     config: remoteAccess,
     port: PORT,
     probeTailscale: probeTailscaleCli,
-    // Under launchd autostart (KeepAlive on non-zero exit) a deliberate exit is a restart.
+    // Under launchd autostart (KeepAlive) any exit is respawned, so a deliberate exit is a restart.
     ...(process.env.XPC_SERVICE_NAME === 'com.openalive.server'
       ? { restart: () => setTimeout(() => process.exit(75), 300) }
       : {}),
