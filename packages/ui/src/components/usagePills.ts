@@ -124,6 +124,50 @@ export interface UsageGroup {
   failed: boolean;
   /** Claude: when the last-known numbers were fetched; absent when nothing ever was. */
   fetchedAt?: number;
+  /** Claude with account rotation: whose numbers the chip shows, and every account. */
+  accounts?: UsageAccounts;
+}
+
+/** One rotation account, reduced to what the chip and its tooltip say. */
+export interface UsageAccountRow {
+  name: string;
+  /** The account new runs go to; its numbers are the chip's. */
+  active: boolean;
+  /** 5H / 7D as read from its `/usage`; empty when not read yet. */
+  windows: UsagePill[];
+  /** Unix ms until which it takes no new runs (spent or at the threshold). */
+  limitedUntil?: number;
+  limitedReason?: string;
+}
+
+export interface UsageAccounts {
+  /** Account new runs go to; null when every account is spent. */
+  active: string | null;
+  rows: UsageAccountRow[];
+}
+
+function accountWindows(a: { fiveHour: UsageWindow | null; sevenDay: UsageWindow | null }): UsagePill[] {
+  const out: UsagePill[] = [];
+  if (a.fiveHour) out.push(pill('5H', a.fiveHour, 'hm', SESSION_COLOR, false));
+  if (a.sevenDay) out.push(pill('7D', a.sevenDay, 'dh', WEEKLY_COLOR, false));
+  return out;
+}
+
+/** Rotation accounts for the Claude chip; undefined without rotation. */
+export function toUsageAccounts(snapshot: UsageLimitsSnapshot | null, now: number): UsageAccounts | undefined {
+  const info = snapshot?.claudeAccounts;
+  if (!info || info.accounts.length < 2) return undefined;
+  return {
+    active: info.active,
+    rows: info.accounts.map((a) => ({
+      name: a.name,
+      active: a.name === info.active,
+      windows: accountWindows(a),
+      ...(a.limitedUntil && a.limitedUntil > now
+        ? { limitedUntil: a.limitedUntil, ...(a.limitedReason ? { limitedReason: a.limitedReason } : {}) }
+        : {}),
+    })),
+  };
 }
 
 /**
@@ -131,14 +175,16 @@ export interface UsageGroup {
  * failed is kept even without windows, so the chip can say the fetch failed
  * rather than show old numbers as current.
  */
-export function toUsageGroups(snapshot: UsageLimitsSnapshot | null): UsageGroup[] {
+export function toUsageGroups(snapshot: UsageLimitsSnapshot | null, now: number = Date.now()): UsageGroup[] {
   if (!snapshot) return [];
+  const accounts = toUsageAccounts(snapshot, now);
   const groups: UsageGroup[] = [];
   const claudeWindows: UsagePill[] = [];
   if (snapshot.fiveHour) claudeWindows.push(pill('5H', snapshot.fiveHour, 'hm', SESSION_COLOR, false));
   if (snapshot.sevenDay) claudeWindows.push(pill('7D', snapshot.sevenDay, 'dh', WEEKLY_COLOR, false));
-  if (claudeWindows.length > 0 || snapshot.stale) {
+  if (claudeWindows.length > 0 || snapshot.stale || accounts) {
     groups.push({
+      ...(accounts ? { accounts } : {}),
       provider: 'claude',
       windows: claudeWindows,
       scoped: snapshot.scopedWeekly.map((w) => pill(w.modelName.toUpperCase(), w, 'dh', SCOPED_COLOR, false)),

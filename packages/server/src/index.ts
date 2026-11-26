@@ -1040,11 +1040,20 @@ let codexUsage: import('@open-alive/core').CodexUsage | null = null;
 /** Claude + Codex in one snapshot; Claude fields are empty until its first poll. */
 function combinedUsage(): import('@open-alive/core').UsageLimitsSnapshot | null {
   const claude = usagePoller.latest();
-  if (!claude && !codexUsage) return null;
-  return {
-    ...(claude ?? { fiveHour: null, sevenDay: null, scopedWeekly: [], fetchedAt: 0, stale: false }),
-    codex: codexUsage,
-  };
+  const accounts = claudeAccounts.usageSummary();
+  if (!claude && !codexUsage && !accounts) return null;
+  const base = claude ?? { fiveHour: null, sevenDay: null, scopedWeekly: [], fetchedAt: 0, stale: false };
+  if (!accounts) return { ...base, codex: codexUsage };
+  // With rotation the Claude chip shows the account new runs go to. The default
+  // login keeps the header poller's own snapshot (it carries the stale flag);
+  // another account shows the pool's last read of it.
+  const defaultName = claudeAccounts.accounts.find((a) => a.configDir === null)?.name;
+  const active = accounts.accounts.find((a) => a.name === accounts.active);
+  const top =
+    !active || active.name === defaultName
+      ? base
+      : { fiveHour: active.fiveHour, sevenDay: active.sevenDay, scopedWeekly: active.scopedWeekly, fetchedAt: active.fetchedAt, stale: false };
+  return { ...top, codex: codexUsage, claudeAccounts: accounts };
 }
 
 const broadcaster = new WSBroadcaster({
@@ -1211,6 +1220,11 @@ if (claudeAccounts.enabled && claudeAccounts.accounts.some((a) => a.configDir ==
   const defaultName = claudeAccounts.accounts.find((a) => a.configDir === null)?.name ?? DEFAULT_ACCOUNT_NAME;
   usagePoller.subscribe((snapshot) => claudeAccounts.noteUsage(defaultName, snapshot));
 }
+// Account usage or availability changed (a poll, a bench, a reset): refresh the header.
+claudeAccounts.subscribe(() => {
+  const usage = combinedUsage();
+  if (usage) broadcaster.broadcast({ type: 'system:usage', usage });
+});
 claudeAccounts.start();
 const CODEX_LIVE_USAGE_MS = 15 * 60_000;
 let codexLogUsage: import('@open-alive/core').CodexUsage | null = null;

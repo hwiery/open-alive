@@ -33,7 +33,7 @@ import { cp, mkdir, readdir, realpath, stat } from 'node:fs/promises';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
-import type { UsageLimitsSnapshot } from '@open-alive/core';
+import type { ClaudeAccountsUsage, UsageLimitsSnapshot } from '@open-alive/core';
 
 export const DEFAULT_ACCOUNT_NAME = 'default';
 export const DEFAULT_SWITCH_AT_PERCENT = 99;
@@ -132,13 +132,15 @@ export class ClaudeAccountPool {
   readonly accounts: readonly ClaudeAccount[];
   readonly threshold: number;
   private readonly benches = new Map<string, Bench>();
-  private readonly usage = new Map<string, { utilization: number; fetchedAt: number }>();
+  private readonly usage = new Map<string, { utilization: number; snapshot: UsageLimitsSnapshot }>();
+  private readonly listeners = new Set<() => void>();
   private readonly now: () => number;
   private readonly log: (msg: string) => void;
   private readonly stateFile?: string;
   private readonly fetchUsage?: AccountUsageFetcher;
   private readonly defaultConfigDir: string;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private expiryTimer: ReturnType<typeof setTimeout> | null = null;
   private polling = false;
 
   constructor(options: ClaudeAccountPoolOptions) {
@@ -198,6 +200,7 @@ export class ClaudeAccountPool {
     this.benches.set(account.name, { until, reason, source: 'refused' });
     this.log(`[accounts] ${account.name} benched until ${new Date(until).toISOString()}: ${reason}`);
     this.writeState();
+    this.emit();
     // The real reset time is in `/usage`; refine the guess in the background.
     if (!resetsAt) void this.refresh(account.name);
   }
@@ -211,7 +214,7 @@ export class ClaudeAccountPool {
     ].filter((x): x is { label: string; w: NonNullable<typeof x.w> } => x.w !== null);
     if (windows.length === 0) return;
     const top = Math.max(...windows.map((x) => x.w.utilization));
-    this.usage.set(name, { utilization: top, fetchedAt: snapshot.fetchedAt });
+    this.usage.set(name, { utilization: top, snapshot });
     // Model-scoped weekly windows (e.g. one model's own cap) are left out: they
     // stop that model, not the account, and a run may use another model.
     const spent = windows.filter((x) => x.w.utilization >= this.threshold);
@@ -233,6 +236,62 @@ export class ClaudeAccountPool {
       this.log(`[accounts] ${name} usable again (${Math.round(top * 100)}%)`);
       this.writeState();
     }
+    this.emit();
+  }
+
+  /** Called whenever an account's usage or availability changes. */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    this.scheduleExpiry();
+    return () => this.listeners.delete(listener);
+  }
+
+  private emit(): void {
+    this.scheduleExpiry();
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch {
+        // a broken consumer must not stop the pool
+      }
+    }
+  }
+
+  /**
+   * A bench that runs out changes which account is active with no other event,
+   * so wake up then and tell listeners (only while someone is listening).
+   */
+  private scheduleExpiry(): void {
+    if (this.expiryTimer) clearTimeout(this.expiryTimer);
+    this.expiryTimer = null;
+    if (this.listeners.size === 0) return;
+    const upcoming = [...this.benches.values()].map((b) => b.until).filter((u) => u > this.now());
+    if (upcoming.length === 0) return;
+    // setTimeout caps at ~24.8 days; a longer wait simply re-arms on the next event.
+    const wait = Math.min(Math.min(...upcoming) - this.now() + 1_000, 2 ** 31 - 1);
+    this.expiryTimer = setTimeout(() => this.emit(), wait);
+    this.expiryTimer.unref?.();
+  }
+
+  /** Every account's last `/usage` read and availability, for the header. Null when rotation is off. */
+  usageSummary(): ClaudeAccountsUsage | null {
+    if (!this.enabled) return null;
+    return {
+      active: this.pick() ?? null,
+      threshold: this.threshold,
+      accounts: this.accounts.map((a) => {
+        const snap = this.usage.get(a.name)?.snapshot;
+        const bench = this.benches.get(a.name);
+        return {
+          name: a.name,
+          fiveHour: snap?.fiveHour ?? null,
+          sevenDay: snap?.sevenDay ?? null,
+          scopedWeekly: snap?.scopedWeekly ?? [],
+          fetchedAt: snap?.fetchedAt ?? 0,
+          ...(bench && bench.until > this.now() ? { limitedUntil: bench.until, limitedReason: bench.reason } : {}),
+        };
+      }),
+    };
   }
 
   /** Read `/usage` for one account, or all non-default ones. */
@@ -266,6 +325,8 @@ export class ClaudeAccountPool {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    if (this.expiryTimer) clearTimeout(this.expiryTimer);
+    this.expiryTimer = null;
   }
 
   status(): ClaudeAccountStatus[] {
@@ -275,7 +336,7 @@ export class ClaudeAccountPool {
       return {
         name: a.name,
         ...(bench && bench.until > this.now() ? { limitedUntil: bench.until, limitedReason: bench.reason } : {}),
-        ...(usage ? { utilization: usage.utilization, usageFetchedAt: usage.fetchedAt } : {}),
+        ...(usage ? { utilization: usage.utilization, usageFetchedAt: usage.snapshot.fetchedAt } : {}),
       };
     });
   }

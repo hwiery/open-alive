@@ -14,7 +14,16 @@
     },
     "usageObservedAt": "기준: {{time}} (마지막 Codex 실행)",
     "usageFailed": "사용량 가져오지 못함",
-    "usageLastFetched": "마지막 조회: {{time}}"
+    "usageLastFetched": "마지막 조회: {{time}}",
+    "usageAccountsBadge": "계정 {{count}}개",
+    "usageAccountsTitle": "Claude 계정 (새 티켓 실행은 ▸ 계정으로)",
+    "usageAccountPaused": "{{time}}까지 쉬는 중",
+    "usageAccountNotRead": "아직 조회 전",
+    "usageAllAccountsSpent": "모든 계정 소진",
+    "usageAccountSwitchTitle": "Claude 계정 전환",
+    "usageAccountSwitchStage": "{{from}} → {{to}}",
+    "usageAccountSwitchLine": "이제 새 티켓은 {{to}} 계정으로 실행합니다.",
+    "usageAccountSwitchNone": "모든 Claude 계정의 사용량이 소진되어, 티켓은 초기화를 기다립니다."
   },
   "settings": {
     "title": "설정",

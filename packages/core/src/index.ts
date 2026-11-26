@@ -58,6 +58,7 @@ export {
 } from './env/tokens.js';
 export type {
   UsageWindow, ScopedUsageWindow, UsageLimitsSnapshot, CodexUsage,
+  ClaudeAccountUsage, ClaudeAccountsUsage,
 } from './usage/rateLimits.js';
 export {
   upsertEnvValue,

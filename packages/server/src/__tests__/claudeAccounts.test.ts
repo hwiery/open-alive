@@ -222,3 +222,46 @@ describe('ClaudeAccountPool', () => {
     });
   });
 });
+
+describe('ClaudeAccountPool usage summary', () => {
+  const accounts = parseClaudeAccounts('default,alt1', '/home/tester');
+  const snap = (sevenDay: number, reset = 50_000): UsageLimitsSnapshot => ({
+    fiveHour: { utilization: 0.1, resetsAt: null },
+    sevenDay: { utilization: sevenDay, resetsAt: reset },
+    scopedWeekly: [],
+    fetchedAt: 7,
+    stale: false,
+  });
+
+  it('is null with rotation off', () => {
+    expect(new ClaudeAccountPool({ accounts: accounts.slice(0, 1) }).usageSummary()).toBeNull();
+  });
+
+  it('reports each account, the active one and benches', () => {
+    let clock = 1_000;
+    const pool = new ClaudeAccountPool({ accounts, now: () => clock });
+    pool.noteUsage('default', snap(0.995));
+    pool.noteUsage('alt1', snap(0.03));
+    const s = pool.usageSummary()!;
+    expect(s.active).toBe('alt1');
+    expect(s.threshold).toBe(0.99);
+    expect(s.accounts[0]).toMatchObject({ name: 'default', fetchedAt: 7, limitedUntil: 50_000, limitedReason: '7d 100%' });
+    expect(s.accounts[1]).toMatchObject({ name: 'alt1', sevenDay: { utilization: 0.03 } });
+    expect(s.accounts[1]!.limitedUntil).toBeUndefined();
+    clock = 60_000;
+    expect(pool.usageSummary()!.active).toBe('default');
+  });
+
+  it('notifies listeners on usage and benches', () => {
+    const pool = new ClaudeAccountPool({ accounts, now: () => 1_000 });
+    let calls = 0;
+    const off = pool.subscribe(() => calls++);
+    pool.noteUsage('alt1', snap(0.1));
+    pool.markLimited('default', 'hit your limit', 9_999);
+    expect(calls).toBe(2);
+    off();
+    pool.noteUsage('alt1', snap(0.2));
+    expect(calls).toBe(2);
+    pool.stop();
+  });
+});

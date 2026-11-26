@@ -14,7 +14,16 @@
     },
     "usageObservedAt": "As of {{time}} (last Codex run)",
     "usageFailed": "Couldn't fetch usage",
-    "usageLastFetched": "Last fetched {{time}}"
+    "usageLastFetched": "Last fetched {{time}}",
+    "usageAccountsBadge": "{{count}} accounts",
+    "usageAccountsTitle": "Claude accounts (new ticket runs go to ▸)",
+    "usageAccountPaused": "paused until {{time}}",
+    "usageAccountNotRead": "not read yet",
+    "usageAllAccountsSpent": "All accounts spent",
+    "usageAccountSwitchTitle": "Claude account switched",
+    "usageAccountSwitchStage": "{{from}} → {{to}}",
+    "usageAccountSwitchLine": "New ticket runs now use {{to}}.",
+    "usageAccountSwitchNone": "Every Claude account is spent; tickets wait for a reset."
   },
   "settings": {
     "title": "Settings",

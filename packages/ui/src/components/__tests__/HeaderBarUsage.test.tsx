@@ -85,4 +85,53 @@ describe('HeaderBar usage', () => {
       if (original) Object.defineProperty(proto, 'scrollWidth', original);
     }
   });
+
+  describe('Claude account rotation', () => {
+    const now = Date.now();
+    const rotating = (active: string | null): UsageLimitsSnapshot => ({
+      ...usage,
+      codex: null,
+      claudeAccounts: {
+        active,
+        threshold: 0.99,
+        accounts: [
+          {
+            name: 'default',
+            fiveHour: null,
+            sevenDay: { utilization: 0.99, resetsAt: now + 86_400_000 },
+            scopedWeekly: [],
+            fetchedAt: 1,
+            limitedUntil: now + 86_400_000,
+            limitedReason: '7d 99%',
+          },
+          { name: 'alt1', fiveHour: { utilization: 0.12, resetsAt: null }, sevenDay: { utilization: 0.03, resetsAt: null }, scopedWeekly: [], fetchedAt: 1 },
+        ],
+      },
+    });
+
+    it('names the active account on the chip and counts the accounts', () => {
+      renderHeader(rotating('alt1'));
+      expect(screen.getByTestId('usage-claude-account').textContent).toBe('alt1');
+      expect(screen.getByTestId('usage-claude-accounts-badge').textContent).toContain('2');
+    });
+
+    it('lists every account in the tooltip, marking the active one and the paused one', () => {
+      renderHeader(rotating('alt1'));
+      const title = screen.getByTestId('usage-claude').getAttribute('title') ?? '';
+      expect(title).toMatch(/▸ alt1 {2}5H 12% · 7D 3%/);
+      expect(title).toMatch(/ {2}default {2}7D 99% · .*\(7d 99%\)/);
+    });
+
+    it('says every account is spent when none is active', () => {
+      renderHeader(rotating(null));
+      expect(screen.getByTestId('usage-claude-account').textContent).not.toBe('');
+      expect(screen.getByTestId('usage-claude-account').textContent).not.toBe('alt1');
+    });
+
+    it('shows no account parts without rotation', () => {
+      renderHeader(usage);
+      expect(screen.queryByTestId('usage-claude-account')).toBeNull();
+      expect(screen.queryByTestId('usage-claude-accounts-badge')).toBeNull();
+    });
+  });
 });
