@@ -22,6 +22,7 @@ import {
   type DecisionOption,
 } from './ticketDisplay.ts';
 import type { EvaluateFn, ReplyFn } from './useTickets.ts';
+import { formatAccountHandoffs } from './accountHandoffs.ts';
 
 interface TicketDetailModalProps {
   ticket: Ticket;
@@ -388,6 +389,9 @@ function RunInfo({ ticket, t }: { ticket: Ticket; t: (key: string) => string }) 
   // `claude --resume <id>` (or reading the session's transcript) is the only way
   // back to work that has already been paid for.
   if (ticket.claudeSessionId) rows.push([t('tickets.runSessionId'), ticket.claudeSessionId]);
+  if (ticket.claudeAccount) rows.push([t('tickets.runAccount'), ticket.claudeAccount]);
+  const handoffs = formatAccountHandoffs(ticket, t);
+  if (handoffs) rows.push([t('tickets.runAccountHandoffs'), handoffs]);
   if (ticket.unsupportedFlags && ticket.unsupportedFlags.length > 0) {
     rows.push([t('tickets.runFlagsDropped'), ticket.unsupportedFlags.join(', ')]);
   }

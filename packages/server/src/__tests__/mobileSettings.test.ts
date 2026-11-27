@@ -84,6 +84,15 @@ describe('mobile settings', () => {
     expect(() => settings.createToken('my phone')).toThrow(/letters/);
   });
 
+  it('tags refusals with a code and the value at fault, for a translated message', async () => {
+    const { settings } = make();
+    await expect(settings.update({ remoteEnabled: true, ticketRoots: ['/work'] })).rejects.toMatchObject({ code: 'needToken' });
+    settings.createToken('phone');
+    await expect(settings.update({ remoteEnabled: true, ticketRoots: [] })).rejects.toMatchObject({ code: 'needRoot' });
+    await expect(settings.update({ ticketRoots: ['/missing'] })).rejects.toMatchObject({ code: 'rootMissing', params: { path: '/missing' } });
+    expect(() => settings.createToken('phone')).toThrow(expect.objectContaining({ code: 'duplicateLabel', params: { name: 'phone' } }));
+  });
+
   it('offers a restart only under a supervisor', () => {
     expect(make().settings.restart()).toBe(false);
   });

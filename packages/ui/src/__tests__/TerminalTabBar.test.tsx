@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { TerminalTabBar, type Tab } from '../views/chat/TerminalTabBar.js';
 
 // Mock i18next so status labels resolve to predictable strings.
@@ -64,5 +64,50 @@ describe('TerminalTabBar status label', () => {
       />,
     );
     expect(screen.queryByText(/Waiting/)).toBeNull();
+  });
+
+  describe('Claude accounts', () => {
+    const choices = [{ name: 'default', paused: true }, { name: 'alt1', paused: false }];
+    const noop = () => {};
+
+    it('shows the account badge only with rotation on', () => {
+      const tab = makeTab({ claudeSessionId: 's', claudeAccount: 'default' });
+      const { rerender } = render(
+        <TerminalTabBar tabs={[tab]} activeTabId="t1" onSelect={noop} onAdd={noop} onClose={noop} />,
+      );
+      expect(screen.queryByTestId('tab-account-t1')).toBeNull();
+      rerender(
+        <TerminalTabBar tabs={[tab]} activeTabId="t1" onSelect={noop} onAdd={noop} onClose={noop} accountChoices={choices} onSwitchAccount={noop} />,
+      );
+      expect(screen.getByTestId('tab-account-t1').textContent).toBe('default');
+    });
+
+    it('right-click offers the other accounts and switches', () => {
+      const onSwitch = vi.fn();
+      const tab = makeTab({ claudeSessionId: 's', claudeAccount: 'default' });
+      render(
+        <TerminalTabBar tabs={[tab]} activeTabId="t1" onSelect={noop} onAdd={noop} onClose={noop} accountChoices={choices} onSwitchAccount={onSwitch} />,
+      );
+      fireEvent.contextMenu(screen.getByText('my-project'));
+      const menu = screen.getByTestId('tab-account-menu');
+      const items = menu.querySelectorAll('[role="menuitem"]');
+      expect(items).toHaveLength(2);
+      expect((items[0] as HTMLButtonElement).disabled).toBe(true); // current
+      fireEvent.click(items[1]!);
+      expect(onSwitch).toHaveBeenCalledWith('t1', 'alt1');
+      expect(screen.queryByTestId('tab-account-menu')).toBeNull();
+    });
+
+    it('has no account menu for shell or SSH tabs', () => {
+      render(
+        <TerminalTabBar
+          tabs={[makeTab({ mode: 'shell', claudeSessionId: 's' }), makeTab({ id: 't2', label: 'remote', source: 'ssh', claudeSessionId: 'x' })]}
+          activeTabId="t1" onSelect={noop} onAdd={noop} onClose={noop} accountChoices={choices} onSwitchAccount={vi.fn()}
+        />,
+      );
+      fireEvent.contextMenu(screen.getByText('my-project'));
+      fireEvent.contextMenu(screen.getByText('remote'));
+      expect(screen.queryByTestId('tab-account-menu')).toBeNull();
+    });
   });
 });

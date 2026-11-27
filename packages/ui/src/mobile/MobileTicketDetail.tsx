@@ -15,6 +15,7 @@ import { COLORS, screen, topBar, body, primaryButton, secondaryButton, actionBar
 import { Section, Panel, InfoRows, Badge } from './parts.tsx';
 import { PullToRefresh } from './PullToRefresh.tsx';
 import type { MobileReplyFn } from './types.ts';
+import { formatAccountHandoffs } from '../views/tickets/accountHandoffs.ts';
 
 export interface MobileTicketDetailProps {
   ticket: Ticket;
@@ -77,6 +78,9 @@ function runRows(ticket: Ticket, t: (k: string) => string): Array<[string, strin
     if (dur) rows.push([t('tickets.runDuration'), dur]);
   }
   if (ticket.claudeSessionId) rows.push([t('tickets.runSessionId'), ticket.claudeSessionId]);
+  if (ticket.claudeAccount) rows.push([t('tickets.runAccount'), ticket.claudeAccount]);
+  const handoffs = formatAccountHandoffs(ticket, t);
+  if (handoffs) rows.push([t('tickets.runAccountHandoffs'), handoffs]);
   return rows;
 }
 

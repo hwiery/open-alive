@@ -221,3 +221,71 @@ describe('TerminalManager', () => {
     }
   });
 });
+
+describe('TerminalManager Claude accounts', () => {
+  let ctx: ReturnType<typeof makeManager>;
+  beforeEach(() => {
+    ctx = makeManager();
+  });
+
+  it('tells viewers the account on spawn and on attach, and passes its env to the process', () => {
+    const a = fakeWs();
+    ctx.manager.create(a.ws, { tabId: 'T1', claudeSessionId: 's', claudeAccount: 'alt1', extraEnv: { CLAUDE_CONFIG_DIR: '/x' } });
+    const orig = ctx.fakes[0]!;
+    expect(a.received).toContainEqual({ type: 'terminal:account', tabId: 'T1', account: 'alt1' });
+    expect(ctx.manager.meta('T1')?.claudeAccount).toBe('alt1');
+    const b = fakeWs();
+    ctx.manager.attach('T1', b.ws);
+    expect(b.received).toContainEqual({ type: 'terminal:account', tabId: 'T1', account: 'alt1' });
+    void orig;
+  });
+
+  it('sends no account message without rotation', () => {
+    const a = fakeWs();
+    ctx.manager.create(a.ws, { tabId: 'T1', claudeSessionId: 's' });
+    expect(a.received.some((m) => m.type === 'terminal:account')).toBe(false);
+  });
+
+  it('replaces a process in place, keeping every viewer and never reporting an exit', () => {
+    const a = fakeWs();
+    const b = fakeWs();
+    ctx.manager.create(a.ws, { tabId: 'T1', claudeSessionId: 's', claudeAccount: 'default', skipPermissions: true });
+    ctx.manager.attach('T1', b.ws);
+    const old = ctx.fakes[0]!;
+    expect(ctx.manager.meta('T1')?.skipPermissions).toBe(true);
+
+    ctx.manager.replace(a.ws, { tabId: 'T1', resumeSessionId: 's', claudeAccount: 'alt1' });
+    expect(old.destroyed).toBe(true);
+    old.onExit?.(0); // a late exit from the destroyed process
+    expect(a.received.some((m) => m.type === 'terminal:exited')).toBe(false);
+
+    ctx.fakes[1]!.handler!('new output');
+    for (const viewer of [a, b]) {
+      expect(viewer.received).toContainEqual({ type: 'terminal:account', tabId: 'T1', account: 'alt1' });
+      expect(viewer.received).toContainEqual({ type: 'terminal:output', tabId: 'T1', data: 'new output' });
+    }
+    expect(ctx.manager.isLive('T1')).toBe(true);
+  });
+
+  it('notices the usage-limit message once, through ANSI codes and split chunks', () => {
+    const a = fakeWs();
+    ctx.manager.create(a.ws, { tabId: 'T1', claudeSessionId: 's', claudeAccount: 'default' });
+    const term = ctx.fakes[0]!;
+    term.handler!('\x1b[31mYou’ve hit your limit\x1b[0m · re');
+    term.handler!('sets 3pm (Asia/Seoul)\r\n');
+    term.handler!("You've hit your limit · resets 3pm (Asia/Seoul)\r\n");
+    const notices = a.received.filter((m) => m.type === 'terminal:account-limit');
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ tabId: 'T1', account: 'default' });
+    expect((notices[0] as { line: string }).line).toContain('resets 3pm');
+  });
+
+  it('ignores talk about limits without the reset clause, and non-Claude tabs', () => {
+    const a = fakeWs();
+    ctx.manager.create(a.ws, { tabId: 'T1', claudeSessionId: 's' });
+    ctx.fakes[0]!.handler!("if you've hit your limit, switch accounts\r\n");
+    ctx.manager.create(a.ws, { tabId: 'T2', mode: 'shell' });
+    ctx.fakes[1]!.handler!("You've hit your limit · resets 3pm\r\n");
+    expect(a.received.some((m) => m.type === 'terminal:account-limit')).toBe(false);
+  });
+});

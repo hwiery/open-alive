@@ -228,26 +228,28 @@ export function FolderColumns({
         <div style={listStyle}>
           {browseLoading ? (
             <div style={emptyStyle}>...</div>
-          ) : browseError ? (
-            <div style={{ ...emptyStyle, color: 'var(--accent-red)', opacity: 1, lineHeight: 1.5 }}>{browseError}</div>
-          ) : browseDirs.length === 0 ? (
-            <div style={emptyStyle}>{t('terminal.emptyDir')}</div>
           ) : (
-            browseDirs.map((dir) => (
-              <button
-                key={dir.path}
-                type="button"
-                onClick={() => onBrowse(dir.path)}
-                onDoubleClick={() => onPick(dir.path)}
-                title={dir.path}
-                style={rowStyle}
-                onMouseEnter={hoverOn}
-                onMouseLeave={hoverOff}
-              >
-                <span style={{ opacity: 0.5, fontSize: 11, flexShrink: 0 }}>&#128193;</span>
-                <span style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dir.name}</span>
-              </button>
-            ))
+            <>
+              {browseError && (
+                <div role="alert" style={{ ...emptyStyle, color: 'var(--accent-red)', opacity: 1, lineHeight: 1.5 }}>{browseError}</div>
+              )}
+              {browseDirs.length === 0 && !browseError && <div style={emptyStyle}>{t('terminal.emptyDir')}</div>}
+              {browseDirs.map((dir) => (
+                <button
+                  key={dir.path}
+                  type="button"
+                  onClick={() => onBrowse(dir.path)}
+                  onDoubleClick={() => onPick(dir.path)}
+                  title={dir.path}
+                  style={rowStyle}
+                  onMouseEnter={hoverOn}
+                  onMouseLeave={hoverOff}
+                >
+                  <span style={{ opacity: 0.5, fontSize: 11, flexShrink: 0 }}>&#128193;</span>
+                  <span style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dir.name}</span>
+                </button>
+              ))}
+            </>
           )}
         </div>
 

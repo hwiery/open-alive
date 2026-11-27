@@ -47,6 +47,10 @@ import { createBranch, deleteBranch, listBranches, switchBranch } from './gitBra
 import { ticketToUpsert, ticketRunOutcome, orphanTicketRunIds } from './runAdapters/ticketRuns.js';
 import { runIdForSession } from './runAttribution.js';
 import { createTicketRunner } from './ticketRunner.js';
+import {
+  ClaudeAccountPool, parseClaudeAccounts, parseSwitchThreshold, DEFAULT_ACCOUNT_NAME,
+} from './claudeAccounts.js';
+import { fetchClaudeUsageViaCli } from './usage/claudeCliUsage.js';
 import { createVerifier } from './ticketVerifier.js';
 import { resolveExecutor } from './executors/resolve.js';
 import { createFlagSupportCache } from './agentFlags.js';
@@ -578,16 +582,41 @@ const panelFor = (ticket: import('@open-alive/core').Ticket) =>
 const askRemoteToCommit = (ticket: import('@open-alive/core').Ticket) =>
   autoCommitEnabled && ticket.autoCommit !== false && ticket.location?.kind === 'ssh';
 
-// The verifier runs at the SAME location as the main agent.
+// Claude account rotation (OA_CLAUDE_ACCOUNTS). When a local ticket's account
+// runs out of usage, the runner benches it and resumes the session on the next
+// account; at OA_CLAUDE_ACCOUNT_SWITCH_AT (default 99%) of a 5h/7d window an
+// account stops taking new runs. Off with fewer than two accounts.
+const claudeAccounts = new ClaudeAccountPool({
+  accounts: parseClaudeAccounts(process.env.OA_CLAUDE_ACCOUNTS, homedir(), (m) => console.warn(`[accounts] ${m}`)),
+  threshold: parseSwitchThreshold(process.env.OA_CLAUDE_ACCOUNT_SWITCH_AT),
+  stateFile: join(ALIVE_DIR, 'claude-accounts.json'),
+  fetchUsage: (extraEnv) => fetchClaudeUsageViaCli(undefined, undefined, extraEnv),
+  log: (m) => console.log(m),
+});
+if (claudeAccounts.enabled) {
+  console.log(
+    `[accounts] rotating tickets across ${claudeAccounts.accounts.map((a) => a.name).join(', ')}` +
+      ` (switch at ${Math.round(claudeAccounts.threshold * 100)}%)`,
+  );
+}
+/** Env that runs a local `claude` child as `account` (empty when rotation is off). */
+const accountEnv = (location: TicketLocation | undefined, account: string | undefined): Record<string, string> =>
+  claudeAccounts.enabled && location?.kind !== 'ssh' ? claudeAccounts.envFor(account) : {};
+
+// The verifier runs at the SAME location as the main agent. Locally it takes
+// whichever account is usable now: it is a fresh session, so nothing to resume.
 const ticketVerifier = createVerifier({
-  run: ({ goal, cwd, location, orchestrated, flags }) =>
-    executorFor(location).spawn({
+  run: ({ goal, cwd, location, orchestrated, flags }) => {
+    const env = accountEnv(location, claudeAccounts.pick());
+    return executorFor(location).spawn({
       goal,
       cwd,
       permissionMode: 'bypassPermissions',
       ...(flags && (flags.model || flags.effort) ? { run: flags } : {}),
       ...(orchestrated && delegateBinDir ? { pathPrepend: delegateBinDir } : {}),
-    }).done,
+      ...(Object.keys(env).length > 0 ? { extraEnv: env } : {}),
+    }).done;
+  },
   panel: panelFor,
 });
 const ticketRunner = createTicketRunner({
@@ -642,11 +671,27 @@ const ticketRunner = createTicketRunner({
       },
       // Only the orchestrator run gets the delegate tool + a ticket tag; the
       // verifier deliberately omits OA_TICKET_ID so its re-delegations aren't logged.
-      ...(orchestrated && delegateBinDir
-        ? { pathPrepend: delegateBinDir, extraEnv: { OA_TICKET_ID: ticket.id } }
-        : {}),
+      ...(orchestrated && delegateBinDir ? { pathPrepend: delegateBinDir } : {}),
+      ...(() => {
+        const extraEnv = {
+          ...(ticket.engine === 'codex' ? {} : accountEnv(ticket.location, ticket.claudeAccount)),
+          ...(orchestrated && delegateBinDir ? { OA_TICKET_ID: ticket.id } : {}),
+        };
+        return Object.keys(extraEnv).length > 0 ? { extraEnv } : {};
+      })(),
     });
   },
+  ...(claudeAccounts.enabled
+    ? {
+        accounts: {
+          size: claudeAccounts.accounts.length,
+          pick: (current?: string) => claudeAccounts.pick(current),
+          markLimited: (account: string | undefined, reason: string) => claudeAccounts.markLimited(account, reason),
+          transferSession: (sessionId: string, from: string | undefined, to: string) =>
+            claudeAccounts.transferSession(sessionId, from, to),
+        },
+      }
+    : {}),
   verify: (ticket, mainResult) => ticketVerifier.verify(ticket, mainResult),
   // Commit only what the gate passed, and only locally — never push.
   ...(ticketCommitter ? { commitWork: (ticket) => ticketCommitter.commit(ticket) } : {}),
@@ -876,7 +921,7 @@ const httpServer = createHttpServer({
     config: remoteAccess,
     port: PORT,
     probeTailscale: probeTailscaleCli,
-    // Under launchd autostart (KeepAlive on non-zero exit) a deliberate exit is a restart.
+    // Under launchd autostart (KeepAlive) any exit is respawned, so a deliberate exit is a restart.
     ...(process.env.XPC_SERVICE_NAME === 'com.openalive.server'
       ? { restart: () => setTimeout(() => process.exit(75), 300) }
       : {}),
@@ -995,11 +1040,80 @@ let codexUsage: import('@open-alive/core').CodexUsage | null = null;
 /** Claude + Codex in one snapshot; Claude fields are empty until its first poll. */
 function combinedUsage(): import('@open-alive/core').UsageLimitsSnapshot | null {
   const claude = usagePoller.latest();
-  if (!claude && !codexUsage) return null;
-  return {
-    ...(claude ?? { fiveHour: null, sevenDay: null, scopedWeekly: [], fetchedAt: 0, stale: false }),
-    codex: codexUsage,
-  };
+  const accounts = claudeAccounts.usageSummary();
+  if (!claude && !codexUsage && !accounts) return null;
+  const base = claude ?? { fiveHour: null, sevenDay: null, scopedWeekly: [], fetchedAt: 0, stale: false };
+  if (!accounts) return { ...base, codex: codexUsage };
+  // With rotation the Claude chip shows the account new runs go to. The default
+  // login keeps the header poller's own snapshot (it carries the stale flag);
+  // another account shows the pool's last read of it.
+  const defaultName = claudeAccounts.accounts.find((a) => a.configDir === null)?.name;
+  const active = accounts.accounts.find((a) => a.name === accounts.active);
+  const top =
+    !active || active.name === defaultName
+      ? base
+      : { fiveHour: active.fiveHour, sevenDay: active.sevenDay, scopedWeekly: active.scopedWeekly, fetchedAt: active.fetchedAt, stale: false };
+  return { ...top, codex: codexUsage, claudeAccounts: accounts };
+}
+
+/**
+ * Account for a dashboard Claude tab. Rotation off, a non-Claude tab or an SSH
+ * tab → none (the process inherits the server's login). Otherwise: the account
+ * the client asked for; else the one this tab last ran on while it is still
+ * usable (a resume after a restart stays put); else the account new runs go to.
+ */
+function terminalAccount(tabId: string, mode: string, source: string, requested?: string): string | undefined {
+  if (!claudeAccounts.enabled || mode !== 'claude' || source === 'ssh') return undefined;
+  if (requested && claudeAccounts.has(requested)) return requested;
+  const previous = getManagedSession(tabId)?.claudeAccount;
+  if (previous && claudeAccounts.has(previous) && claudeAccounts.isUsable(previous)) return previous;
+  return claudeAccounts.pick() ?? previous ?? claudeAccounts.accounts[0]?.name;
+}
+
+/**
+ * Reopen a Claude tab's conversation on another account, in the same tab: the
+ * running `claude` is replaced by `claude --resume <id>` under that account's
+ * login. A session that never wrote a transcript (nothing said yet) starts
+ * fresh with the same id instead, since `--resume` would find nothing.
+ */
+async function switchTerminalAccount(ws: import('ws').WebSocket, tabId: string, account: string): Promise<void> {
+  if (!claudeAccounts.enabled || !claudeAccounts.has(account)) return;
+  const meta = terminalManager.meta(tabId);
+  const rec = getManagedSession(tabId);
+  const sessionId = meta?.claudeSessionId ?? rec?.claudeSessionId;
+  if (!sessionId || (meta && (meta.mode !== 'claude' || meta.source === 'ssh' || meta.claudeVariant !== 'claude'))) return;
+  const from = meta?.claudeAccount ?? rec?.claudeAccount;
+  if (from !== account) await claudeAccounts.transferSession(sessionId, from, account).catch(() => {});
+  const resumable = await claudeAccounts.hasSession(sessionId, account);
+  const cwd = meta?.cwd ?? rec?.cwd;
+  const displayName = meta?.displayName ?? rec?.displayName;
+  terminalManager.replace(ws, {
+    tabId,
+    cwd,
+    mode: 'claude',
+    source: 'local',
+    claudeVariant: 'claude',
+    // Same permission mode the tab was opened with; a tab with no live process keeps prompts on.
+    skipPermissions: meta?.skipPermissions === true,
+    ...(resumable ? { resumeSessionId: sessionId } : { claudeSessionId: sessionId }),
+    displayName,
+    claudeAccount: account,
+    extraEnv: claudeAccounts.envFor(account),
+  });
+  managedSessionIds.add(sessionId);
+  const now = Date.now();
+  saveManagedSession({
+    tabId,
+    claudeSessionId: sessionId,
+    cwd,
+    displayName,
+    mode: 'claude',
+    claudeVariant: 'claude',
+    claudeAccount: account,
+    createdAt: rec?.createdAt ?? now,
+    lastActive: now,
+  }).catch((err) => console.error(`[session] failed to persist ${tabId}:`, err));
+  console.log(`[accounts] tab ${tabId} reopened on ${account}${resumable ? ' (resumed)' : ' (new session)'}`);
 }
 
 const broadcaster = new WSBroadcaster({
@@ -1029,6 +1143,7 @@ const broadcaster = new WSBroadcaster({
       // This is what makes the Claude CLI /resume picker, sidebar, and tab label all share one name.
       const resolvedDisplayName =
         msg.displayName ?? (msg.cwd ? getProjectName(msg.cwd) : undefined);
+      const account = terminalAccount(msg.tabId, msg.mode ?? 'claude', msg.source ?? 'local', msg.claudeAccount);
       terminalManager.create(ws, {
         tabId: msg.tabId,
         cwd: msg.cwd,
@@ -1041,7 +1156,13 @@ const broadcaster = new WSBroadcaster({
         resumeSessionId: msg.resumeSessionId,
         displayName: resolvedDisplayName,
         localModel: msg.localModel,
+        ...(account ? { claudeAccount: account, extraEnv: claudeAccounts.envFor(account) } : {}),
       });
+      // A resumed tab moving to another account needs its transcript there.
+      const prevAccount = getManagedSession(msg.tabId)?.claudeAccount;
+      if (account && msg.resumeSessionId && prevAccount && prevAccount !== account) {
+        void claudeAccounts.transferSession(msg.resumeSessionId, prevAccount, account).catch(() => {});
+      }
       // Persist Claude (non-SSH) sessions so they can be resumed after a restart.
       const effectiveClaudeId = msg.resumeSessionId ?? msg.claudeSessionId;
       if ((msg.mode ?? 'claude') === 'claude' && msg.source !== 'ssh' && effectiveClaudeId) {
@@ -1053,6 +1174,7 @@ const broadcaster = new WSBroadcaster({
           displayName: resolvedDisplayName,
           mode: 'claude',
           claudeVariant: msg.claudeVariant ?? 'claude',
+          ...(account ? { claudeAccount: account } : {}),
           createdAt: now,
           lastActive: now,
         }).catch((err) => console.error(`[session] failed to persist ${msg.tabId}:`, err));
@@ -1077,6 +1199,8 @@ const broadcaster = new WSBroadcaster({
           broadcaster.send(ws, { type: 'terminal:missing', tabId: msg.tabId });
         }
       }
+    } else if (msg.type === 'terminal:switch-account') {
+      void switchTerminalAccount(ws, msg.tabId, msg.account);
     } else if (msg.type === 'terminal:input') {
       terminalManager.input(msg.tabId, msg.data);
       const now = Date.now();
@@ -1160,6 +1284,18 @@ usagePoller.subscribe(() => {
   if (usage) broadcaster.broadcast({ type: 'system:usage', usage });
 });
 usagePoller.start();
+// The header poller already reads the default login's `/usage`; feed it to the
+// rotation instead of asking twice. The pool polls the other accounts itself.
+if (claudeAccounts.enabled && claudeAccounts.accounts.some((a) => a.configDir === null)) {
+  const defaultName = claudeAccounts.accounts.find((a) => a.configDir === null)?.name ?? DEFAULT_ACCOUNT_NAME;
+  usagePoller.subscribe((snapshot) => claudeAccounts.noteUsage(defaultName, snapshot));
+}
+// Account usage or availability changed (a poll, a bench, a reset): refresh the header.
+claudeAccounts.subscribe(() => {
+  const usage = combinedUsage();
+  if (usage) broadcaster.broadcast({ type: 'system:usage', usage });
+});
+claudeAccounts.start();
 const CODEX_LIVE_USAGE_MS = 15 * 60_000;
 let codexLogUsage: import('@open-alive/core').CodexUsage | null = null;
 let codexLiveUsage: import('@open-alive/core').CodexUsage | null = null;
@@ -1242,6 +1378,7 @@ process.on('SIGINT', () => {
   despawnTimers.clear();
   metricsPoller.stop();
   usagePoller.stop();
+  claudeAccounts.stop();
   clearInterval(codexUsageTimer);
   clearInterval(codexLiveUsageTimer);
   stopWorkerLoop();

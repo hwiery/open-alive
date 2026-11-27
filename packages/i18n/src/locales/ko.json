@@ -14,7 +14,16 @@
     },
     "usageObservedAt": "기준: {{time}} (마지막 Codex 실행)",
     "usageFailed": "사용량 가져오지 못함",
-    "usageLastFetched": "마지막 조회: {{time}}"
+    "usageLastFetched": "마지막 조회: {{time}}",
+    "usageAccountsBadge": "계정 {{count}}개",
+    "usageAccountsTitle": "Claude 계정 (새 티켓 실행은 ▸ 계정으로)",
+    "usageAccountPaused": "{{time}}까지 쉬는 중",
+    "usageAccountNotRead": "아직 조회 전",
+    "usageAllAccountsSpent": "모든 계정 소진",
+    "usageAccountSwitchTitle": "Claude 계정 전환",
+    "usageAccountSwitchStage": "{{from}} → {{to}}",
+    "usageAccountSwitchLine": "이제 새 티켓은 {{to}} 계정으로 실행합니다.",
+    "usageAccountSwitchNone": "모든 Claude 계정의 사용량이 소진되어, 티켓은 초기화를 기다립니다."
   },
   "settings": {
     "title": "설정",
@@ -162,6 +171,22 @@
       "restartRequired": "저장한 설정은 서버를 다시 시작해야 적용됩니다.",
       "restartNow": "지금 재시작",
       "restarting": "재시작 중… (약 10초)",
+      "errors": {
+        "network": "서버에 연결하지 못했습니다. 서버가 켜져 있는지 확인한 뒤 다시 시도하세요. (open-alive status)",
+        "localOnly": "모바일 연결 설정은 서버가 실행 중인 이 컴퓨터의 브라우저에서만 바꿀 수 있습니다.",
+        "needRoot": "원격 접속을 켜려면 티켓이 실행될 폴더가 하나 이상 필요합니다. 위의 '폴더 추가'로 고른 뒤 다시 저장하세요.",
+        "needToken": "원격 접속을 켜려면 기기 토큰이 필요합니다. 2단계에서 토큰을 먼저 만든 뒤 다시 저장하세요.",
+        "rootMissing": "이 폴더가 이 컴퓨터에 없습니다: {{path}} — 목록에서 제거하거나 다른 폴더를 고른 뒤 다시 저장하세요.",
+        "rootNotAbsolute": "폴더는 전체 경로여야 합니다: {{path}} — 목록에서 제거한 뒤 '폴더 추가'로 다시 고르세요.",
+        "rootDuplicate": "이미 추가된 폴더입니다: {{path}}",
+        "tailscaleOff": "이 컴퓨터의 Tailscale 이 연결되어 있지 않아 'Tailscale 주소만'을 쓸 수 없습니다. 1단계에서 연결하고 '다시 확인'을 누르거나, '모든 주소'를 고르세요.",
+        "badTerminalLevel": "알 수 없는 터미널 사용 수준입니다. 목록에서 다시 고르세요.",
+        "badLabel": "토큰 이름에는 영문·숫자·점·대시·밑줄만 쓸 수 있습니다 (최대 40자). 공백과 한글은 쓸 수 없습니다.",
+        "duplicateLabel": "'{{name}}' 토큰이 이미 있습니다. 다른 이름을 쓰거나 기존 토큰을 폐기한 뒤 만드세요.",
+        "unknownToken": "'{{name}}' 토큰을 찾을 수 없습니다. 이미 폐기되었을 수 있으니 '다시 확인'을 눌러 보세요.",
+        "lastToken": "'{{name}}' 은 마지막 토큰이라 원격 접속이 켜진 동안에는 폐기할 수 없습니다. 원격 접속을 끄고 저장하거나, 다른 토큰을 먼저 만드세요.",
+        "restartUnsupported": "자동 시작(launchd)으로 실행 중일 때만 여기서 재시작할 수 있습니다. 터미널에서 실행하세요: open-alive stop && open-alive start"
+      },
       "step1": {
         "title": "Tailscale 설치·로그인 (이 컴퓨터와 핸드폰)",
         "body": "두 기기에 Tailscale 을 설치하고 같은 계정으로 로그인하면, 핸드폰이 어디에 있든 100.x.x.x 주소로 이 컴퓨터에 닿습니다.",
@@ -489,7 +514,21 @@
     },
     "closeTab": "터미널 닫기",
     "positionLabel": "터미널 위치",
-    "dragHint": "제목 줄을 좌우로 끌어 위치를 옮길 수 있습니다"
+    "dragHint": "제목 줄을 좌우로 끌어 위치를 옮길 수 있습니다",
+    "account": {
+      "label": "Claude 계정",
+      "auto": "자동",
+      "autoHint": "자동은 지금 새 실행을 받는 계정({{account}})으로 엽니다.",
+      "badgeTitle": "Claude 계정 {{account}}로 실행 중",
+      "menuTitle": "다른 계정으로 이어 열기",
+      "menuCurrent": "현재",
+      "menuPaused": "쉬는 중",
+      "switching": "이 세션을 {{account}} 계정에서 이어 여는 중…",
+      "limitBanner": "이 탭의 계정({{account}})이 사용량 한도에 걸렸습니다.",
+      "limitBannerNoAccount": "이 탭이 Claude 사용량 한도에 걸렸습니다.",
+      "reopenOn": "{{account}}에서 이어 하기",
+      "dismiss": "닫기"
+    }
   },
   "chat": {
     "title": "Chat",
@@ -639,6 +678,14 @@
     "remotePickerTitle": "원격 폴더 선택",
     "pickerTitle": "프로젝트 폴더 선택",
     "useThisFolder": "이 폴더로 지정",
+    "browseError": {
+      "notFound": "폴더가 없습니다: {{path}}",
+      "notDir": "폴더가 아닙니다: {{path}}",
+      "denied": "이 폴더를 읽을 권한이 없습니다: {{path}} — macOS 라면 시스템 설정 > 개인정보 보호 및 보안 > 파일 및 폴더에서 Node 의 접근을 허용하세요.",
+      "localOnly": "폴더 찾아보기는 서버가 실행 중인 이 컴퓨터에서만 쓸 수 있습니다. 최근 폴더에서 고르거나 이 컴퓨터에서 다시 시도하세요.",
+      "network": "서버에 연결하지 못해 폴더를 불러오지 못했습니다. 서버가 켜져 있는지 확인하세요.",
+      "unknown": "폴더를 읽지 못했습니다: {{path}}"
+    },
     "create": "맡기기",
     "creating": "생성 중…",
     "empty": "없음",
@@ -687,6 +734,10 @@
     "runEffort": "Effort",
     "runThinking": "확장 사고",
     "runSessionId": "세션 ID",
+    "runAccount": "Claude 계정",
+    "runAccountHandoffs": "계정 전환",
+    "runAccountDefault": "기본 로그인",
+    "runHandoffRestarted": "처음부터 다시 실행",
     "runInput": "입력 토큰",
     "runOutput": "출력 토큰",
     "runCacheRead": "캐시 읽기",

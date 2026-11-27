@@ -14,7 +14,16 @@
     },
     "usageObservedAt": "As of {{time}} (last Codex run)",
     "usageFailed": "Couldn't fetch usage",
-    "usageLastFetched": "Last fetched {{time}}"
+    "usageLastFetched": "Last fetched {{time}}",
+    "usageAccountsBadge": "{{count}} accounts",
+    "usageAccountsTitle": "Claude accounts (new ticket runs go to ▸)",
+    "usageAccountPaused": "paused until {{time}}",
+    "usageAccountNotRead": "not read yet",
+    "usageAllAccountsSpent": "All accounts spent",
+    "usageAccountSwitchTitle": "Claude account switched",
+    "usageAccountSwitchStage": "{{from}} → {{to}}",
+    "usageAccountSwitchLine": "New ticket runs now use {{to}}.",
+    "usageAccountSwitchNone": "Every Claude account is spent; tickets wait for a reset."
   },
   "settings": {
     "title": "Settings",
@@ -162,6 +171,22 @@
       "restartRequired": "The saved settings take effect after a server restart.",
       "restartNow": "Restart now",
       "restarting": "Restarting… (about 10s)",
+      "errors": {
+        "network": "Could not reach the server. Check that it is running, then try again. (open-alive status)",
+        "localOnly": "Mobile settings can only be changed from a browser on the computer running the server.",
+        "needRoot": "Remote access needs at least one folder for tickets to run in. Choose one with 'Add folder' above, then save again.",
+        "needToken": "Remote access needs a device token. Create one in step 2, then save again.",
+        "rootMissing": "This folder does not exist on this computer: {{path}} — remove it or choose another, then save again.",
+        "rootNotAbsolute": "Folders must be full paths: {{path}} — remove it and choose it again with 'Add folder'.",
+        "rootDuplicate": "This folder is already added: {{path}}",
+        "tailscaleOff": "Tailscale is not connected on this computer, so 'Tailscale address only' can't be used. Connect it in step 1 and press 'Check again', or choose 'All addresses'.",
+        "badTerminalLevel": "Unknown terminal level. Choose one from the list again.",
+        "badLabel": "Token names can only use letters, digits, dots, dashes and underscores (max 40), with no spaces.",
+        "duplicateLabel": "A token named '{{name}}' already exists. Use another name, or revoke the old one first.",
+        "unknownToken": "No token named '{{name}}'. It may already be revoked; press 'Check again'.",
+        "lastToken": "'{{name}}' is the last token, so it can't be revoked while remote access is on. Turn remote access off and save, or create another token first.",
+        "restartUnsupported": "Restarting from here needs autostart (launchd). Run this in a terminal: open-alive stop && open-alive start"
+      },
       "step1": {
         "title": "Install and sign in to Tailscale (this computer and your phone)",
         "body": "Install Tailscale on both devices and sign in with the same account; your phone then reaches this computer at a 100.x.x.x address from anywhere.",
@@ -489,7 +514,21 @@
     },
     "closeTab": "Close terminal",
     "positionLabel": "Terminal position",
-    "dragHint": "Drag the title bar left or right to move it"
+    "dragHint": "Drag the title bar left or right to move it",
+    "account": {
+      "label": "Claude account",
+      "auto": "Auto",
+      "autoHint": "Auto uses the account new runs go to now ({{account}}).",
+      "badgeTitle": "Runs on Claude account {{account}}",
+      "menuTitle": "Reopen on another account",
+      "menuCurrent": "current",
+      "menuPaused": "paused",
+      "switching": "Reopening this session on the {{account}} account…",
+      "limitBanner": "This tab’s account ({{account}}) hit its usage limit.",
+      "limitBannerNoAccount": "This tab hit its Claude usage limit.",
+      "reopenOn": "Continue on {{account}}",
+      "dismiss": "Dismiss"
+    }
   },
   "chat": {
     "title": "Chat",
@@ -639,6 +678,14 @@
     "remotePickerTitle": "Select remote folder",
     "pickerTitle": "Choose project folder",
     "useThisFolder": "Use this folder",
+    "browseError": {
+      "notFound": "Folder not found: {{path}}",
+      "notDir": "Not a folder: {{path}}",
+      "denied": "No permission to read this folder: {{path}} — on macOS, allow Node under System Settings > Privacy & Security > Files and Folders.",
+      "localOnly": "Browsing folders only works on the computer running the server. Choose a recent folder, or try again on that computer.",
+      "network": "Could not reach the server to load folders. Check that it is running.",
+      "unknown": "Could not read this folder: {{path}}"
+    },
     "create": "Solve",
     "creating": "Creating…",
     "empty": "None",
@@ -687,6 +734,10 @@
     "runEffort": "Effort",
     "runThinking": "Extended thinking",
     "runSessionId": "Session ID",
+    "runAccount": "Claude account",
+    "runAccountHandoffs": "Account switches",
+    "runAccountDefault": "default login",
+    "runHandoffRestarted": "restarted",
     "runInput": "Input tokens",
     "runOutput": "Output tokens",
     "runCacheRead": "Cache read",

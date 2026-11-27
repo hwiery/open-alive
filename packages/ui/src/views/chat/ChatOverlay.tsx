@@ -19,14 +19,14 @@ import {
   saveLaunchProfile,
   type LaunchProfileId,
 } from '../../state/launchProfile.ts';
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import type { MutableRefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import type { WSServerMessage, TerminalMode as TerminalSpawnMode, TerminalSource } from '@open-alive/core';
+import type { WSServerMessage, TerminalMode as TerminalSpawnMode, TerminalSource, ClaudeAccountsUsage } from '@open-alive/core';
 import { TerminalTabBar } from './TerminalTabBar.tsx';
 import type { Tab } from './TerminalTabBar.tsx';
 import { SSHPresetDialog } from './SSHPresetDialog.tsx';
@@ -65,6 +65,8 @@ export interface SpawnRequest {
   displayName?: string;
   /** Codex only: run on the server's local model (`OA_LOCAL_MODEL`). */
   localModel?: boolean;
+  /** Claude only, with account rotation: run on this account (absent = server's choice). */
+  claudeAccount?: string;
 }
 
 /** Lightweight SSH tab projection broadcast to App so the sidebar can show a presence indicator. */
@@ -158,6 +160,10 @@ interface ChatOverlayProps {
   onModeChange?: (mode: TerminalMode) => void;
   /** Reports the docked panel size (px, undefined = default) on mount and after each resize drag. */
   onDockSizeChange?: (size: { bottomHeight?: number; rightWidth?: number }) => void;
+  /** Claude account rotation, from the usage snapshot. Absent = rotation off. */
+  claudeAccounts?: ClaudeAccountsUsage;
+  /** Reopen a Claude tab's session on another account. */
+  onSwitchAccount?: (tabId: string, account: string) => void;
 }
 
 /**
@@ -368,7 +374,7 @@ export function ModeIcon({ mode, size = 14 }: { mode: TerminalMode; size?: numbe
 }
 
 
-export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClose, terminalEventRef, projectPaths = [], listViewActive = false, contentViewActive = false, listLeftInset = 0, leftInset = 0, onSshSessionsChange, onChatClaudeSessionsChange, projectNames, waitingSessionIds, connected = false, onAttach, spreadActive = false, onSelectSpreadTile, onModeChange, onDockSizeChange }: ChatOverlayProps) {
+export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClose, terminalEventRef, projectPaths = [], listViewActive = false, contentViewActive = false, listLeftInset = 0, leftInset = 0, onSshSessionsChange, onChatClaudeSessionsChange, projectNames, waitingSessionIds, connected = false, onAttach, spreadActive = false, onSelectSpreadTile, onModeChange, onDockSizeChange, claudeAccounts, onSwitchAccount }: ChatOverlayProps) {
   const { t } = useTranslation();
   const isListView = listViewActive;
 
@@ -482,6 +488,8 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
   const connectedRef = useRef(connected);
   const onSelectSpreadTileRef = useRef(onSelectSpreadTile);
   onSpawnRef.current = onSpawn;
+  const onSwitchAccountRef = useRef(onSwitchAccount);
+  onSwitchAccountRef.current = onSwitchAccount;
   onInputRef.current = onInput;
   onResizeRef.current = onResize;
   onCloseRef.current = onClose;
@@ -514,6 +522,14 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
   const [cwdTab, setCwdTab] = useState<'local' | 'ssh'>('local');
   const [customPath, setCustomPath] = useState('');
   const [launchProfileId, setLaunchProfileId] = useState<LaunchProfileId>(() => loadLaunchProfile(browserStorage()));
+  /** Account for the next Claude tab; '' = automatic (the account new runs go to). */
+  const [launchAccount, setLaunchAccount] = useState('');
+  const accountChoices = useMemo(
+    () => (claudeAccounts && claudeAccounts.accounts.length >= 2
+      ? claudeAccounts.accounts.map((a) => ({ name: a.name, paused: Boolean(a.limitedUntil && a.limitedUntil > Date.now()) }))
+      : []),
+    [claudeAccounts],
+  );
   const localModel = useLocalModel();
   const activeLaunch = resolveLaunchProfile(launchProfileId, localModel !== null);
   tabsRef.current = tabs;
@@ -625,6 +641,8 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
     displayName?: string;
     /** Codex only: run on the server's local model. */
     localModel?: boolean;
+    /** Claude account to run on; absent = the server's choice. */
+    claudeAccount?: string;
   }
 
   // Allocate an xterm instance for `tabId`, mount it into the wrapper, and wire
@@ -728,6 +746,7 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
           resumeSessionId: opts.resumeSessionId,
           displayName: opts.displayName,
           ...(opts.localModel ? { localModel: true } : {}),
+          ...(mode === 'claude' && opts.claudeAccount ? { claudeAccount: opts.claudeAccount } : {}),
         });
       });
 
@@ -821,18 +840,31 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
     }
   }, [connected, tabs]);
 
+  // A folder listing can answer after the overlay is gone (a closed page, a
+  // finished test); updating state then is at best a no-op and at worst throws.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const fetchBrowse = useCallback(
     (dir: string) => {
       setBrowseLoading(true);
       fetch(`${API_BASE}/api/fs/browse?dir=${encodeURIComponent(dir)}`)
         .then((r) => r.json())
         .then((data: { path: string; dirs: { name: string; path: string }[] }) => {
+          if (!mountedRef.current) return;
           setBrowseCurrentPath(data.path);
           setBrowseDirs(data.dirs);
           setBrowsePath(data.path);
         })
         .catch(() => {})
-        .finally(() => setBrowseLoading(false));
+        .finally(() => {
+          if (mountedRef.current) setBrowseLoading(false);
+        });
     },
     [],
   );
@@ -940,9 +972,18 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
         // Record this folder as recently-used so the picker can surface it next time.
         setRecentFolders(pushRecentFolder(cwd));
       }
-      createTab({ cwd, dangerousSkip: skip, mode: agent, source: 'local', ...(local ? { localModel: true } : {}) });
+      // A chosen account only applies while rotation is on and still lists it.
+      const account = agent === 'claude' && accountChoices.some((a) => a.name === launchAccount) ? launchAccount : undefined;
+      createTab({
+        cwd,
+        dangerousSkip: skip,
+        mode: agent,
+        source: 'local',
+        ...(local ? { localModel: true } : {}),
+        ...(account ? { claudeAccount: account } : {}),
+      });
     },
-    [createTab, activeLaunch],
+    [createTab, activeLaunch, accountChoices, launchAccount],
   );
 
   const handleChooseLaunch = useCallback((id: LaunchProfileId) => {
@@ -991,6 +1032,24 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
   }, [projectNames]);
 
   // Close a tab: dispose xterm, remove container, call onClose
+  /**
+   * Reopen a Claude tab's conversation on another account, in place: the
+   * server replaces the tab's `claude` with `claude --resume` under that login.
+   */
+  const switchTabAccount = useCallback((tabId: string, account: string) => {
+    const entry = termsRef.current.get(tabId);
+    entry?.term.reset();
+    entry?.term.write(`\x1b[2m[${t('terminal.account.switching', { account })}]\x1b[0m\r\n`);
+    setTabs((prev) =>
+      prev.map((tb) => (tb.id === tabId ? { ...tb, accountLimit: undefined, exited: false, dormant: false, status: 'idle' as const } : tb)),
+    );
+    onSwitchAccountRef.current?.(tabId, account);
+  }, [t]);
+
+  const dismissAccountLimit = useCallback((tabId: string) => {
+    setTabs((prev) => prev.map((tb) => (tb.id === tabId ? { ...tb, accountLimit: undefined } : tb)));
+  }, []);
+
   const closeTab = useCallback((tabId: string) => {
     const entry = termsRef.current.get(tabId);
     if (entry) {
@@ -1278,6 +1337,16 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
           ),
         );
         markTabActivity(msg.tabId);
+      } else if (msg.type === 'terminal:account') {
+        setTabs((prev) =>
+          prev.map((tb) => (tb.id === msg.tabId && tb.claudeAccount !== msg.account ? { ...tb, claudeAccount: msg.account } : tb)),
+        );
+      } else if (msg.type === 'terminal:account-limit') {
+        setTabs((prev) =>
+          prev.map((tb) =>
+            tb.id === msg.tabId ? { ...tb, accountLimit: { ...(msg.account ? { account: msg.account } : {}), line: msg.line } } : tb,
+          ),
+        );
       } else if (msg.type === 'terminal:dormant') {
         // The server restarted: no live pty, but it remembers this session id.
         resumeInPlace(msg.tabId, msg.claudeSessionId);
@@ -1575,7 +1644,66 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
         onAdd={openLocalPicker}
         onClose={requestCloseTab}
         onReorder={reorderTabs}
+        accountChoices={accountChoices}
+        onSwitchAccount={switchTabAccount}
       />
+
+      {/* Usage-limit notice for the active Claude tab: offer the other accounts. */}
+      {(() => {
+        const tab = tabs.find((tb) => tb.id === activeTabId);
+        if (!tab?.accountLimit || accountChoices.length < 2) return null;
+        const current = tab.accountLimit.account ?? tab.claudeAccount;
+        const others = accountChoices
+          .filter((a) => a.name !== current)
+          .sort((a, b) => Number(a.paused) - Number(b.paused));
+        return (
+          <div
+            data-testid="terminal-account-limit"
+            role="alert"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 8,
+              padding: '6px 12px',
+              borderBottom: '1px solid var(--border-color)',
+              background: 'var(--surface-2)',
+              fontSize: 12,
+              color: 'var(--text-primary)',
+              flexShrink: 0,
+            }}
+          >
+            <span style={{ color: 'var(--accent-amber)', fontWeight: 600 }}>
+              {current ? t('terminal.account.limitBanner', { account: current }) : t('terminal.account.limitBannerNoAccount')}
+            </span>
+            {others.map((a) => (
+              <button
+                key={a.name}
+                onClick={() => switchTabAccount(tab.id, a.name)}
+                style={{
+                  padding: '3px 10px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  borderRadius: 8,
+                  border: '1px solid var(--accent-blue)',
+                  background: a.paused ? 'transparent' : 'var(--accent-blue)',
+                  color: a.paused ? 'var(--accent-blue)' : 'var(--on-accent)',
+                  cursor: 'pointer',
+                }}
+              >
+                {t('terminal.account.reopenOn', { account: a.name })}
+                {a.paused ? ` (${t('terminal.account.menuPaused')})` : ''}
+              </button>
+            ))}
+            <button
+              onClick={() => dismissAccountLimit(tab.id)}
+              style={{ marginLeft: 'auto', padding: '3px 8px', fontSize: 12, borderRadius: 8, border: 'none', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer' }}
+            >
+              {t('terminal.account.dismiss')}
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Close-confirmation modal — gates live tabs so the user can't accidentally
           terminate a running Claude session. Exited tabs bypass this and close immediately. */}
@@ -1979,6 +2107,39 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
                     </span>
                   )}
                 </div>
+                {/* Claude account (rotation on only): automatic, or a specific login. */}
+                {activeLaunch.agent === 'claude' && accountChoices.length >= 2 && (
+                  <div data-testid="launch-account" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)', marginRight: 2 }}>{t('terminal.account.label')}</span>
+                    <div role="radiogroup" aria-label={t('terminal.account.label')} style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {[{ name: '', paused: false }, ...accountChoices].map((a) => {
+                        const selected = (accountChoices.some((c) => c.name === launchAccount) ? launchAccount : '') === a.name;
+                        return (
+                          <button
+                            key={a.name || 'auto'}
+                            role="radio"
+                            aria-checked={selected}
+                            onClick={() => setLaunchAccount(a.name)}
+                            title={a.name ? undefined : t('terminal.account.autoHint', { account: claudeAccounts?.active ?? '—' })}
+                            style={{
+                              padding: '4px 10px',
+                              fontSize: 12,
+                              fontWeight: 600,
+                              borderRadius: 8,
+                              cursor: 'pointer',
+                              border: `1px solid ${selected ? 'var(--accent-blue)' : 'var(--border-color)'}`,
+                              background: selected ? 'var(--hover)' : 'transparent',
+                              color: selected ? 'var(--accent-blue)' : 'var(--text-secondary)',
+                            }}
+                          >
+                            {a.name ? a.name : `${t('terminal.account.auto')} · ${claudeAccounts?.active ?? '—'}`}
+                            {a.paused ? ` (${t('terminal.account.menuPaused')})` : ''}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {/* Resolved target path */}
                 <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', opacity: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'rtl', textAlign: 'left' }}>
                   <span dir="ltr">{browseCurrentPath}</span>

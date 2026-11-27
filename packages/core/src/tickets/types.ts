@@ -105,6 +105,18 @@ export type TicketFailureReason =
   | 'usage-limit' // the account's usage / rate / spend limit stopped the agent
   | 'model-unavailable'; // the requested model does not exist or this account can't use it
 
+/** One move of a ticket's session to another Claude account (see `Ticket.accountHandoffs`). */
+export interface TicketAccountHandoff {
+  /** Account the run stopped on; absent when it ran before rotation was configured. */
+  from?: string;
+  to: string;
+  /** Why the ticket moved: the account hit its limit mid-run. */
+  reason: 'usage-limit';
+  /** Whether the session was resumed (`--resume`) or, with no session yet, restarted. */
+  resumed: boolean;
+  at: number;
+}
+
 /**
  * One independent reviewer's opinion in the LiteLLM verification panel.
  * `passed === null` means the model never produced a parseable verdict (timeout,
@@ -313,6 +325,17 @@ export interface Ticket {
    * session id, or the Codex thread id when `engine === 'codex'`.
    */
   claudeSessionId?: string;
+  /**
+   * Claude account (a name from `OA_CLAUDE_ACCOUNTS`) the latest run used.
+   * Absent = account rotation is off, or the ticket predates it.
+   */
+  claudeAccount?: string;
+  /**
+   * Every move of this ticket to another Claude account after one ran out of
+   * usage, oldest first. The session continues on the new account via
+   * `--resume`, so the thread is unbroken; this records where it happened.
+   */
+  accountHandoffs?: TicketAccountHandoff[];
   /** Agent CLI that runs this ticket. Absent = Claude Code (every ticket before Codex). */
   engine?: TicketEngine;
   error?: string;

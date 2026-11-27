@@ -40,6 +40,33 @@ export interface UsageLimitsSnapshot {
    * installed or has not run yet; `observedAt` says how fresh the numbers are.
    */
   codex?: CodexUsage | null;
+  /**
+   * Claude account rotation (`OA_CLAUDE_ACCOUNTS`). Present only with two or
+   * more accounts; the top-level Claude windows are then the active account's.
+   */
+  claudeAccounts?: ClaudeAccountsUsage;
+}
+
+/** One rotation account's usage, as last read from `/usage` under its login. */
+export interface ClaudeAccountUsage {
+  name: string;
+  fiveHour: UsageWindow | null;
+  sevenDay: UsageWindow | null;
+  scopedWeekly: ScopedUsageWindow[];
+  /** Unix ms of the read; 0 when it has not been read yet. */
+  fetchedAt: number;
+  /** Set while the account takes no new runs (at the switch threshold, or it refused a run). */
+  limitedUntil?: number;
+  /** Why: `7d 99%`, or the CLI's limit message. */
+  limitedReason?: string;
+}
+
+export interface ClaudeAccountsUsage {
+  /** Account new ticket runs go to; null when every account is spent. */
+  active: string | null;
+  /** 0..1 utilization at which an account stops taking new runs. */
+  threshold: number;
+  accounts: ClaudeAccountUsage[];
 }
 
 export interface CodexUsage {

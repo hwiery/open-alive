@@ -29,4 +29,11 @@ describe('phoneSpawnMessage', () => {
       type: 'terminal:spawn', tabId: 'phone-1', cwd: '/w/app', mode: 'shell', source: 'local',
     });
   });
+
+  it('passes a chosen Claude account, and never for other modes', () => {
+    expect(phoneSpawnMessage({ ...base, mode: 'claude', skipPermissions: false, claudeAccount: 'alt1' })).toMatchObject({
+      mode: 'claude', claudeAccount: 'alt1',
+    });
+    expect(phoneSpawnMessage({ ...base, mode: 'shell', skipPermissions: false, claudeAccount: 'alt1' })).not.toHaveProperty('claudeAccount');
+  });
 });

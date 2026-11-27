@@ -2,7 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { useTranslation } from 'react-i18next';
 import type { UsageLimitsSnapshot } from '@open-alive/core';
 import { ModelLogo } from './ModelBadge.tsx';
-import { formatRemaining, toUsageGroups, usagePillColor, type UsageGroup, type UsagePill } from './usagePills.ts';
+import {
+  formatRemaining, toUsageGroups, usagePillColor, type UsageAccounts, type UsageGroup, type UsagePill,
+} from './usagePills.ts';
 import { relativeTime } from '../mobile/sessionStatus.ts';
 
 /** A model id per provider, only to pick the right vendor logo. */
@@ -41,7 +43,7 @@ export function UsageSummary({ usage, now, onOpen, layout = 'header' }: UsageSum
   const { t } = useTranslation();
   const stacked = layout === 'stacked';
   const ref = useRef<HTMLDivElement>(null);
-  const groups = toUsageGroups(usage);
+  const groups = toUsageGroups(usage, now);
   const detail = useFitDetail(ref, !stacked && groups.length > 0, [usage, now]);
   if (groups.length === 0) return null;
   const showReset = detail < DETAIL_NO_RESET;
@@ -71,6 +73,8 @@ export function UsageSummary({ usage, now, onOpen, layout = 'header' }: UsageSum
           ...(g.fetchedAt && g.failed ? [t('header.usageLastFetched', { time: new Date(g.fetchedAt).toLocaleString() })] : []),
         ];
         if (g.failed) lines.unshift(t('header.usageFailed'));
+        if (g.accounts) lines.push('', ...accountLines(g.accounts, t));
+        const allSpent = Boolean(g.accounts && g.accounts.active === null);
         const age = showExtras && g.observedAt ? relativeTime(now, g.observedAt, t) : '';
         // Compared as displayed: the API's timestamps for the same reset differ by seconds.
         const weekly = g.windows.find((w) => w.label === '7D');
@@ -108,6 +112,14 @@ export function UsageSummary({ usage, now, onOpen, layout = 'header' }: UsageSum
             }}
           >
             <ModelLogo model={LOGO_MODEL[g.provider]} size={13} />
+            {g.accounts && (
+              <span
+                data-testid="usage-claude-account"
+                style={{ color: allSpent ? 'var(--accent-red)' : 'var(--text-primary)', fontWeight: 600 }}
+              >
+                {allSpent ? t('header.usageAllAccountsSpent') : g.accounts.active}
+              </span>
+            )}
             {g.failed && (
               <span data-testid={`usage-${g.provider}-failed`} style={{ color: 'var(--accent-amber)', fontWeight: 600 }}>
                 {t('header.usageFailed')}
@@ -119,6 +131,20 @@ export function UsageSummary({ usage, now, onOpen, layout = 'header' }: UsageSum
                 <WindowSegment pill={pill} now={now} showReset={reset} />
               </span>
             ))}
+            {g.accounts && (
+              <span
+                data-testid="usage-claude-accounts-badge"
+                style={{
+                  ...muted,
+                  padding: '0 5px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border-color)',
+                  fontSize: 10,
+                }}
+              >
+                ⇄{showExtras ? ` ${t('header.usageAccountsBadge', { count: g.accounts.rows.length })}` : g.accounts.rows.length}
+              </span>
+            )}
             {age && !g.failed && (
               <span data-testid={`usage-${g.provider}-age`} style={muted}>
                 · {age}
@@ -169,6 +195,27 @@ function useFitDetail(ref: React.RefObject<HTMLDivElement | null>, enabled: bool
 }
 
 const muted: CSSProperties = { color: 'var(--text-secondary)', fontWeight: 400 };
+
+/**
+ * Tooltip lines for account rotation, one per account:
+ * `▸ alt1  5H 12% · 7D 3%` or `  default  7D 99% · paused until Thu 09:00 (7d 99%)`.
+ */
+function accountLines(accounts: UsageAccounts, t: (key: string, opts?: Record<string, unknown>) => string): string[] {
+  return [
+    t('header.usageAccountsTitle'),
+    ...accounts.rows.map((row) => {
+      const numbers = row.windows.length > 0
+        ? row.windows.map((w) => `${w.label} ${w.percent}%`).join(' · ')
+        : t('header.usageAccountNotRead');
+      const paused = row.limitedUntil
+        ? ` · ${t('header.usageAccountPaused', {
+          time: new Date(row.limitedUntil).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }),
+        })}${row.limitedReason ? ` (${row.limitedReason})` : ''}`
+        : '';
+      return `${row.active ? '▸' : '  '} ${row.name}  ${numbers}${paused}`;
+    }),
+  ];
+}
 
 /** `5H 23% 2h 30m` — label, percent, and (when room allows) time to reset. */
 function WindowSegment({ pill, now, showReset }: { pill: UsagePill; now: number; showReset: boolean }) {

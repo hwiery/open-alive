@@ -143,6 +143,8 @@ export default function App() {
   // FSM keeps an agent in the sticky `waiting` state across later tool events, so
   // firing per-message would ring the chime repeatedly while Claude resumes work.
   const prevStateRef = useRef<Map<string, string>>(new Map());
+  /** Claude account new ticket runs go to, as last broadcast (undefined = no snapshot yet / rotation off). */
+  const prevActiveAccountRef = useRef<string | null | undefined>(undefined);
 
   // Unlock audio on the first user interaction. Browsers block programmatic
   // playback until the page has a user gesture, so event-driven notification
@@ -200,6 +202,24 @@ export default function App() {
     }
     if (msg.type === 'project:names') {
       setProjectNames(msg.names);
+    }
+    if (msg.type === 'system:usage') {
+      // Tell the user once when new ticket runs move to another Claude account.
+      // The first snapshot after (re)connecting only sets the baseline.
+      const active = msg.usage.claudeAccounts ? msg.usage.claudeAccounts.active : undefined;
+      const prev = prevActiveAccountRef.current;
+      prevActiveAccountRef.current = active;
+      if (prev !== undefined && active !== undefined && prev !== active && prev !== null) {
+        addToastRef.current(
+          'warning',
+          {
+            title: i18n.t('header.usageAccountSwitchTitle'),
+            stage: active === null ? i18n.t('header.usageAllAccountsSpent') : i18n.t('header.usageAccountSwitchStage', { from: prev, to: active }),
+            lines: [active === null ? i18n.t('header.usageAccountSwitchNone') : i18n.t('header.usageAccountSwitchLine', { to: active })],
+          },
+          `claude-account:${active ?? 'none'}`,
+        );
+      }
     }
     if (msg.type === 'agent:despawn') {
       prevStateRef.current.delete(msg.sessionId);
@@ -431,6 +451,7 @@ export default function App() {
       resumeSessionId?: string;
       displayName?: string;
       localModel?: boolean;
+      claudeAccount?: string;
     }) => {
       send({
         type: 'terminal:spawn',
@@ -444,10 +465,15 @@ export default function App() {
         resumeSessionId: req.resumeSessionId,
         displayName: req.displayName,
         ...(req.localModel ? { localModel: true } : {}),
+        ...(req.claudeAccount ? { claudeAccount: req.claudeAccount } : {}),
       });
     },
     [send],
   );
+
+  const handleTerminalSwitchAccount = useCallback((tabId: string, account: string) => {
+    send({ type: 'terminal:switch-account', tabId, account });
+  }, [send]);
 
   const handleTerminalInput = useCallback((tabId: string, data: string) => {
     send({ type: 'terminal:input', tabId, data });
@@ -785,6 +811,8 @@ export default function App() {
           onSelectSpreadTile={handleSelectSpreadTile}
           onModeChange={handleTerminalModeChange}
           onDockSizeChange={setTerminalDockSize}
+          claudeAccounts={usageLimits?.claudeAccounts}
+          onSwitchAccount={handleTerminalSwitchAccount}
         />
       </div>
     </div>

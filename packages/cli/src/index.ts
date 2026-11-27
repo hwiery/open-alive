@@ -29,11 +29,22 @@ import { homedir } from 'node:os';
 import { runSetup, resolvePort, writePrivateFile } from './setup.js';
 import { isPortInUse } from './portCheck.js';
 import { windowsStartupScript } from './windowsStartup.js';
+import {
+  accountDir, addAccountToEnv, claudeJsonFor, copyClaudeState, linkSharedEntries, listAccounts,
+  mainClaudeDir, validateAccountName,
+} from './accounts.js';
 
 const ALIVE_DIR = join(homedir(), '.open-alive');
 const PID_FILE = join(ALIVE_DIR, 'server.pid');
 const LOG_FILE = join(ALIVE_DIR, 'server.log');
 const ENV_FILE = join(ALIVE_DIR, '.env');
+
+/** Say what `copyClaudeState` carried over. */
+function reportCopiedState(copied: { mcpServers: number; keys: number; projects: number }): void {
+  if (copied.mcpServers > 0) console.log(`Copied ${copied.mcpServers} user MCP server(s).`);
+  if (copied.keys > 0) console.log(`Copied ${copied.keys} setup flag(s) (onboarding, seen notices).`);
+  if (copied.projects > 0) console.log(`Copied trust and tool approvals for ${copied.projects} folder(s).`);
+}
 
 /** Env-file text, or '' when there is no file yet. */
 function readEnvFile(): string {
@@ -116,6 +127,9 @@ function serverEntryPath(): string {
 // macOS launchd plist for the unified open-alive server. As of D-048+
 // the absorbed open-alive-prompt subsystem (prompt API + worker queue) runs
 // inside this same Node process, so one plist covers everything.
+// KeepAlive is unconditional: launchd respawns the server on any exit, clean
+// or not. An explicit `open-alive stop` boots the job out instead of killing
+// the process, so stopping still sticks until `start` or the next login.
 
 const LAUNCHD_LABEL = 'com.openalive.server';
 const LAUNCHD_FILE = `${homedir()}/Library/LaunchAgents/${LAUNCHD_LABEL}.plist`;
@@ -142,10 +156,7 @@ function buildOpenAlivePlist(): string {
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
-  <dict>
-    <key>SuccessfulExit</key>
-    <false/>
-  </dict>
+  <true/>
   <key>ThrottleInterval</key>
   <integer>10</integer>
   <key>WorkingDirectory</key>
@@ -184,6 +195,22 @@ const WINDOWS_STARTUP_FILE = join(
   process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'),
   'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'open-alive.cmd',
 );
+
+function launchdTarget(): string {
+  return `gui/${uidShell()}/${LAUNCHD_LABEL}`;
+}
+
+/** True when the autostart job is loaded into launchd (running or waiting to respawn). */
+function launchdLoaded(): boolean {
+  return process.platform === 'darwin' && tryRun('launchctl', ['print', launchdTarget()]);
+}
+
+/** Load the installed plist; launchd starts it right away (RunAtLoad). */
+function launchdBootstrap(): boolean {
+  return process.platform === 'darwin' && existsSync(LAUNCHD_FILE)
+    && (tryRun('launchctl', ['bootstrap', `gui/${uidShell()}`, LAUNCHD_FILE])
+      || tryRun('launchctl', ['load', '-w', LAUNCHD_FILE]));
+}
 
 function windowsAutostart(sub: 'enable' | 'disable' | 'status'): void {
   if (sub === 'enable') {
@@ -291,6 +318,16 @@ async function startServer(argv: readonly string[]): Promise<void> {
   // "expose this server" is always something someone typed.
   const remote = argv.includes('--remote');
   const host = flagValue(argv, '--host');
+
+  // With autostart installed, launchd owns the server so it is respawned on
+  // every exit. Flags like --remote come from ~/.open-alive/.env in that mode.
+  if (!readPid() && (launchdLoaded() || launchdBootstrap())) {
+    console.log('open-alive server is running under launchd (autostart).');
+    console.log(`  Dashboard: ${url}`);
+    console.log(`  Logs:      ${join(ALIVE_DIR, 'autostart-server.log')}`);
+    if (!noOpen) openBrowser(url);
+    return;
+  }
 
   const existingPid = readPid();
   if (existingPid) {
@@ -430,6 +467,12 @@ switch (command) {
   }
 
   case 'stop': {
+    // KeepAlive would respawn a killed launchd server, so unload the job.
+    if (launchdLoaded()) {
+      tryRun('launchctl', ['bootout', launchdTarget()]);
+      console.log('open-alive server stopped (launchd job unloaded until "open-alive start" or next login).');
+      break;
+    }
     const pid = readPid();
     if (!pid) {
       console.log('open-alive server is not running.');
@@ -438,6 +481,23 @@ switch (command) {
     process.kill(pid, 'SIGINT');
     try { unlinkSync(PID_FILE); } catch {}
     console.log(`open-alive server stopped (PID: ${pid}).`);
+    break;
+  }
+
+  case 'restart': {
+    if (launchdLoaded()) {
+      tryRun('launchctl', ['kickstart', '-k', launchdTarget()]);
+      console.log('open-alive server restarted (launchd).');
+      break;
+    }
+    const pid = readPid();
+    if (pid) {
+      process.kill(pid, 'SIGINT');
+      try { unlinkSync(PID_FILE); } catch {}
+      // Give the old process a moment to release the port.
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    await startServer(args);
     break;
   }
 
@@ -500,6 +560,86 @@ switch (command) {
       break;
     }
     console.error(`Unknown token subcommand "${sub}". Use new|list|revoke.`);
+    process.exit(1);
+    break;
+  }
+
+  case 'account': {
+    const sub = process.argv[3] ?? 'list';
+    if (sub === 'list') {
+      const names = listAccounts(readEnvFile());
+      if (names.length < 2) {
+        console.log('Account rotation is off (needs two or more). Add one: open-alive account add <name>');
+      }
+      for (const entry of names) {
+        const [name, explicit] = entry.split('=');
+        const dir = explicit ?? (name === 'default' ? null : accountDir(name!));
+        let state = 'unknown';
+        try {
+          const out = execFileSync('claude', ['auth', 'status', '--json'], {
+            env: { ...process.env, PATH: augmentPath(process.env.PATH), ...(dir ? { CLAUDE_CONFIG_DIR: dir } : {}) },
+            encoding: 'utf8',
+            timeout: 20_000,
+            stdio: ['ignore', 'pipe', 'ignore'],
+          });
+          const s = JSON.parse(out) as { loggedIn?: boolean; email?: string; subscriptionType?: string };
+          state = s.loggedIn ? `${s.email ?? 'signed in'}${s.subscriptionType ? ` (${s.subscriptionType})` : ''}` : 'not signed in';
+        } catch {
+          // `claude` missing or the call failed: leave unknown
+        }
+        console.log(`  ${name}  ${dir ?? mainClaudeDir()}  ${state}`);
+      }
+      break;
+    }
+    if (sub === 'add') {
+      const name = process.argv[4];
+      const invalid = validateAccountName(name);
+      if (invalid) {
+        console.error(invalid);
+        process.exit(1);
+      }
+      const dir = accountDir(name!);
+      const main = mainClaudeDir();
+      const linked = linkSharedEntries(main, dir);
+      console.log(`Account dir: ${dir}`);
+      if (linked.length > 0) console.log(`Shared from ${main}: ${linked.join(', ')}`);
+      console.log('\nSign in with the OTHER Claude account in the browser that opens.\n');
+      const login = crossSpawn.sync('claude', ['auth', 'login'], {
+        stdio: 'inherit',
+        env: { ...process.env, PATH: augmentPath(process.env.PATH), CLAUDE_CONFIG_DIR: dir },
+      });
+      if (login.status !== 0) {
+        console.error('\nSign-in did not finish. Run again: open-alive account add ' + name);
+        process.exit(1);
+      }
+      reportCopiedState(copyClaudeState(claudeJsonFor(process.env.CLAUDE_CONFIG_DIR?.trim() || null), claudeJsonFor(dir)));
+      writeEnvFile(addAccountToEnv(readEnvFile(), name!));
+      console.log(`\nAdded "${name}" to OA_CLAUDE_ACCOUNTS in ~/.open-alive/.env.`);
+      console.log('Check both logins are different accounts: open-alive account list');
+      console.log('Restart the server for it to take effect: open-alive restart');
+      break;
+    }
+    if (sub === 'sync') {
+      // Re-apply the shared links and copied settings to an account added
+      // earlier (or after Claude Code added new state). Never touches the login.
+      const name = process.argv[4];
+      const invalid = validateAccountName(name);
+      if (invalid) {
+        console.error(invalid.replace('add', 'sync'));
+        process.exit(1);
+      }
+      const dir = accountDir(name!);
+      if (!existsSync(join(dir, '.claude.json'))) {
+        console.error(`No signed-in account at ${dir}. Add it first: open-alive account add ${name}`);
+        process.exit(1);
+      }
+      const linked = linkSharedEntries(mainClaudeDir(), dir);
+      if (linked.length > 0) console.log(`Shared: ${linked.join(', ')}`);
+      reportCopiedState(copyClaudeState(claudeJsonFor(process.env.CLAUDE_CONFIG_DIR?.trim() || null), claudeJsonFor(dir)));
+      console.log(`"${name}" is up to date.`);
+      break;
+    }
+    console.error(`Unknown account subcommand "${sub}". Use add <name>|sync <name>|list.`);
     process.exit(1);
     break;
   }
@@ -567,10 +707,14 @@ Usage:
                              the interface. Remote mode needs a device token and
                              OPEN_ALIVE_TICKET_ROOTS, or the server refuses to boot.)
   open-alive stop         Stop the server
+  open-alive restart      Restart the server (via launchd when autostart is on)
   open-alive status       Show server status
   open-alive token        new <label>|list|revoke <label> — device tokens for
                             remote access from the app
+  open-alive account      add <name>|sync <name>|list — extra Claude logins; a ticket whose
+                            account runs out of usage resumes on the next one
   open-alive autostart    enable|disable|status — macOS launchd plist
+                            (respawns the server on every exit)
   open-alive doctor       Detect installed agent runtimes and adapter status
                             (pass --json for machine-readable output)
   open-alive logs         Show recent server logs

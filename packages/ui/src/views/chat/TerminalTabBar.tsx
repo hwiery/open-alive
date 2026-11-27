@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { SSHErrorKind, TerminalSource, TerminalMode } from '@open-alive/core';
 
@@ -24,6 +24,17 @@ export interface Tab {
   displayName?: string;
   /** True when the server has no live pty for this tab (post-restart); awaiting resume. */
   dormant?: boolean;
+  /** Claude account rotation: the account this tab runs on (from the server). */
+  claudeAccount?: string;
+  /** Set when the tab printed Claude's usage-limit notice; cleared on switch or dismiss. */
+  accountLimit?: { account?: string; line: string };
+}
+
+/** An account a Claude tab can be reopened on. */
+export interface TabAccountChoice {
+  name: string;
+  /** At the switch threshold or refused a run; still selectable. */
+  paused: boolean;
 }
 
 interface TerminalTabBarProps {
@@ -34,6 +45,10 @@ interface TerminalTabBarProps {
   onClose: (tabId: string) => void;
   /** Reorder callback: move the tab at `fromIndex` so it sits at `toIndex` after the move. */
   onReorder?: (fromIndex: number, toIndex: number) => void;
+  /** Claude accounts (rotation on). Fewer than two = no badge and no menu. */
+  accountChoices?: TabAccountChoice[];
+  /** Reopen a Claude tab on another account (right-click menu). */
+  onSwitchAccount?: (tabId: string, account: string) => void;
 }
 
 function statusBackground(tab: Tab, isActive: boolean): string {
@@ -76,10 +91,32 @@ export function TerminalTabBar({
   onAdd,
   onClose,
   onReorder,
+  accountChoices = [],
+  onSwitchAccount,
 }: TerminalTabBarProps) {
   const { t } = useTranslation();
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
+  const [menu, setMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
+  const accountsOn = accountChoices.length >= 2;
+  /** Only Claude tabs with a session can move between accounts. */
+  const canSwitch = (tab: Tab) =>
+    accountsOn && !!onSwitchAccount && tab.source !== 'ssh' && (tab.mode ?? 'claude') === 'claude' && !!tab.claudeSessionId;
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(null); };
+    window.addEventListener('pointerdown', close);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('blur', close);
+    return () => {
+      window.removeEventListener('pointerdown', close);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('blur', close);
+    };
+  }, [menu]);
+  const menuTab = menu ? tabs.find((tb) => tb.id === menu.tabId) : undefined;
 
   return (
     <div
@@ -138,6 +175,11 @@ export function TerminalTabBar({
               setOverIndex(null);
             }}
             onClick={() => onSelect(tab.id)}
+            onContextMenu={(e) => {
+              if (!canSwitch(tab)) return;
+              e.preventDefault();
+              setMenu({ tabId: tab.id, x: e.clientX, y: e.clientY });
+            }}
             title={
               tab.sshError
                 ? t(`terminal.sshError.${tab.sshError.kind}`, { defaultValue: tab.sshError.line })
@@ -192,6 +234,22 @@ export function TerminalTabBar({
             )}
             <span style={{ opacity: tab.exited ? 0.65 : 1, display: 'flex', alignItems: 'center', gap: 4 }}>
               {tab.label}
+              {accountsOn && tab.claudeAccount && (tab.mode ?? 'claude') === 'claude' && tab.source !== 'ssh' && (
+                <span
+                  data-testid={`tab-account-${tab.id}`}
+                  title={t('terminal.account.badgeTitle', { account: tab.claudeAccount })}
+                  style={{
+                    fontSize: 9,
+                    lineHeight: 1,
+                    padding: '2px 4px',
+                    borderRadius: 4,
+                    border: `1px solid ${tab.accountLimit ? 'var(--accent-amber, #ff9f43)' : 'var(--border-color)'}`,
+                    color: tab.accountLimit ? 'var(--accent-amber, #ff9f43)' : 'var(--text-secondary)',
+                  }}
+                >
+                  {tab.claudeAccount}
+                </span>
+              )}
               {waitingLabel && (
                 <span
                   style={{
@@ -240,6 +298,61 @@ export function TerminalTabBar({
           </div>
         );
       })}
+      {menu && menuTab && (
+        <div
+          role="menu"
+          data-testid="tab-account-menu"
+          onPointerDown={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            left: menu.x,
+            top: menu.y,
+            zIndex: 10000,
+            minWidth: 180,
+            padding: 4,
+            borderRadius: 10,
+            background: 'var(--bg-secondary, var(--surface-2))',
+            border: '1px solid var(--border-color)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+            fontSize: 12,
+          }}
+        >
+          <div style={{ padding: '6px 10px', color: 'var(--text-secondary)', fontSize: 11 }}>{t('terminal.account.menuTitle')}</div>
+          {accountChoices.map((a) => {
+            const current = a.name === menuTab.claudeAccount;
+            return (
+              <button
+                key={a.name}
+                role="menuitem"
+                disabled={current}
+                onClick={() => {
+                  setMenu(null);
+                  onSwitchAccount?.(menuTab.id, a.name);
+                }}
+                style={{
+                  display: 'flex',
+                  width: '100%',
+                  gap: 8,
+                  padding: '6px 10px',
+                  border: 'none',
+                  borderRadius: 6,
+                  background: 'transparent',
+                  color: current ? 'var(--text-secondary)' : 'var(--text-primary)',
+                  cursor: current ? 'default' : 'pointer',
+                  textAlign: 'left',
+                  fontSize: 12,
+                }}
+                onMouseEnter={(e) => { if (!current) e.currentTarget.style.background = 'var(--hover)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                <span style={{ fontWeight: 600 }}>{a.name}</span>
+                {current && <span style={{ marginLeft: 'auto', opacity: 0.7 }}>{t('terminal.account.menuCurrent')}</span>}
+                {!current && a.paused && <span style={{ marginLeft: 'auto', color: 'var(--accent-amber)' }}>{t('terminal.account.menuPaused')}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <button
         onClick={onAdd}
         title={t('terminal.newTab')}

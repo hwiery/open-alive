@@ -25,6 +25,8 @@ export interface ManagedSessionRecord {
   displayName?: string;
   mode: TerminalMode;
   claudeVariant: 'claude' | 'agents';
+  /** Claude account rotation: the account the tab last ran on (restored on resume). */
+  claudeAccount?: string;
   createdAt: number;
   lastActive: number;
 }

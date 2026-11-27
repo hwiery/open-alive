@@ -51,6 +51,52 @@ describe('ticket FolderPicker', () => {
     expect(onSelect).toHaveBeenCalledWith('/w');
   });
 
+  it('sits above the Settings modal it opens from', () => {
+    render(<FolderPicker onSelect={vi.fn()} onClose={vi.fn()} />);
+    const backdrop = screen.getByText(i18n.t('tickets.pickerTitle')).closest('[style*="z-index"]') as HTMLElement;
+    expect(Number(backdrop.style.zIndex)).toBeGreaterThan(1100); // SettingsModal's zIndex
+  });
+
+  it('Esc closes the picker without reaching a modal listening underneath', () => {
+    const onClose = vi.fn();
+    const underneath = vi.fn();
+    window.addEventListener('keydown', underneath);
+    render(<FolderPicker onSelect={vi.fn()} onClose={onClose} />);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    window.removeEventListener('keydown', underneath);
+    expect(onClose).toHaveBeenCalled();
+    expect(underneath).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [400, { code: 'denied', path: '/w/locked' }, 'denied', { path: '/w/locked' }],
+    [400, { code: 'notFound', path: '/w/gone' }, 'notFound', { path: '/w/gone' }],
+    [403, { error: 'Route is not available to remote callers' }, 'localOnly', {}],
+  ])('explains a %i listing failure (%j)', async (status, body, key, params) => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status, json: async () => body })));
+    render(<FolderPicker onSelect={vi.fn()} onClose={vi.fn()} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(i18n.t(`tickets.browseError.${key}`, params));
+  });
+
+  it('says the server is unreachable when the request itself fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+    render(<FolderPicker onSelect={vi.fn()} onClose={vi.fn()} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(i18n.t('tickets.browseError.network'));
+  });
+
+  it('keeps the last good folder listed when entering a subfolder fails', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.includes('browsed')
+        ? { ok: false, status: 400, json: async () => ({ code: 'denied', path: '/w/browsed' }) }
+        : { ok: true, status: 200, json: async () => ({ path: '/w', dirs: [{ name: 'browsed', path: '/w/browsed' }] }) },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    render(<FolderPicker onSelect={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByTitle('/w/browsed'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('/w/browsed');
+    expect(screen.getByTitle('/w/browsed')).toBeInTheDocument();
+  });
+
   it('has no quick-select column when no active folders are passed', () => {
     render(<FolderPicker onSelect={vi.fn()} onClose={vi.fn()} />);
     expect(screen.queryByText(i18n.t('terminal.quickSelect'))).not.toBeInTheDocument();

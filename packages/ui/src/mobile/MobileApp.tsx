@@ -140,7 +140,7 @@ export function MobileApp({ subscribeRaw, connected, send, liveSessions = null, 
 
   const body =
     tab === 'sessions' && sessionsAvailable ? (
-      <MobileSessions subscribeRaw={subscribeRaw} send={send} terminalLevel={caps.terminal} projects={projects} live={liveSessions} />
+      <MobileSessions subscribeRaw={subscribeRaw} send={send} terminalLevel={caps.terminal} projects={projects} live={liveSessions} claudeAccounts={usageLimits?.claudeAccounts} />
     ) : (
       <MobileTicketList
         tickets={tickets}

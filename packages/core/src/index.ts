@@ -31,6 +31,7 @@ export {
 export type { TicketRunPreset, TicketRunProfile, TicketEffort, TicketModelTier, TicketModelMap, TicketRunPresetSpec } from './tickets/runProfile.js';
 export type {
   Ticket, TicketState, TicketFailureReason, TicketVerification, TicketCreateInput, TicketUsage, TicketEngine,
+  TicketAccountHandoff,
   TicketAgentExit, TicketAgentExitCause,
   TicketTurn, TicketTurnRole, TicketTurnKind,
   VerificationOpinion, PanelConsensus, TicketCommit,
@@ -57,6 +58,7 @@ export {
 } from './env/tokens.js';
 export type {
   UsageWindow, ScopedUsageWindow, UsageLimitsSnapshot, CodexUsage,
+  ClaudeAccountUsage, ClaudeAccountsUsage,
 } from './usage/rateLimits.js';
 export {
   upsertEnvValue,
