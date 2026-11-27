@@ -82,7 +82,10 @@ describe('HeaderBar usage', () => {
       // The tooltip still carries everything.
       expect(screen.getByTestId('usage-claude').getAttribute('title') ?? '').toContain('FABLE 0%');
     } finally {
+      // jsdom defines scrollWidth on Element, not HTMLElement: with no own
+      // descriptor to restore, remove the override or it leaks into later tests.
       if (original) Object.defineProperty(proto, 'scrollWidth', original);
+      else delete (proto as { scrollWidth?: number }).scrollWidth;
     }
   });
 
@@ -109,10 +112,19 @@ describe('HeaderBar usage', () => {
       },
     });
 
-    it('names the active account on the chip and counts the accounts', () => {
+    it('shows every account on the chip, the active one marked, a paused one flagged', () => {
       renderHeader(rotating('alt1'));
-      expect(screen.getByTestId('usage-claude-account').textContent).toBe('alt1');
-      expect(screen.getByTestId('usage-claude-accounts-badge').textContent).toContain('2');
+      const alt1 = screen.getByTestId('usage-account-alt1');
+      const def = screen.getByTestId('usage-account-default');
+      expect(alt1.getAttribute('data-active')).toBe('true');
+      expect(def.getAttribute('data-active')).toBeNull();
+      expect(alt1.textContent).toContain('5H12%');
+      expect(alt1.textContent).toContain('7D3%');
+      expect(def.textContent).toContain('⏸ default');
+      expect(def.textContent).toContain('7D99%');
+      // Accounts are listed in configured order.
+      const chip = screen.getByTestId('usage-claude');
+      expect(chip.textContent!.indexOf('default')).toBeLessThan(chip.textContent!.indexOf('alt1'));
     });
 
     it('lists every account in the tooltip, marking the active one and the paused one', () => {
@@ -122,16 +134,34 @@ describe('HeaderBar usage', () => {
       expect(title).toMatch(/ {2}default {2}7D 99% · .*\(7d 99%\)/);
     });
 
-    it('says every account is spent when none is active', () => {
+    it('keeps one number per account when the header is tight', () => {
+      const proto = HTMLElement.prototype;
+      Object.defineProperty(proto, 'scrollWidth', {
+        configurable: true,
+        get(this: HTMLElement) {
+          if (!this.hasAttribute('data-usage-fit')) return 0;
+          return this.querySelector('[data-testid="usage-summary"]')?.getAttribute('data-detail') === '2' ? 0 : 1;
+        },
+      });
+      try {
+        renderHeader(rotating('alt1'));
+        expect(screen.getByTestId('usage-account-alt1').textContent).toBe('alt17D3%');
+        expect(screen.getByTestId('usage-account-default').textContent).toBe('⏸ default7D99%');
+      } finally {
+        delete (proto as { scrollWidth?: number }).scrollWidth;
+      }
+    });
+
+    it('says every account is spent when none is active, still listing them', () => {
       renderHeader(rotating(null));
-      expect(screen.getByTestId('usage-claude-account').textContent).not.toBe('');
-      expect(screen.getByTestId('usage-claude-account').textContent).not.toBe('alt1');
+      expect(screen.getByTestId('usage-claude-all-spent')).not.toBeNull();
+      expect(screen.getByTestId('usage-account-alt1').getAttribute('data-active')).toBeNull();
     });
 
     it('shows no account parts without rotation', () => {
       renderHeader(usage);
-      expect(screen.queryByTestId('usage-claude-account')).toBeNull();
-      expect(screen.queryByTestId('usage-claude-accounts-badge')).toBeNull();
+      expect(screen.queryByTestId('usage-account-default')).toBeNull();
+      expect(screen.queryByTestId('usage-claude-all-spent')).toBeNull();
     });
   });
 });

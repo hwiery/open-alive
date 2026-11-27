@@ -41,6 +41,10 @@ export const DEFAULT_SWITCH_AT_PERCENT = 99;
 const FALLBACK_BENCH_MS = 60 * 60_000;
 /** 15 min, the same cadence as the header usage poll. */
 const DEFAULT_POLL_MS = 15 * 60_000;
+/** After work on an account, re-read its `/usage` once it has been quiet this long… */
+const NUDGE_QUIET_MS = 60_000;
+/** …but not more often than this per account (each read starts a short `claude`). */
+const NUDGE_MIN_GAP_MS = 3 * 60_000;
 
 export interface ClaudeAccount {
   name: string;
@@ -141,6 +145,9 @@ export class ClaudeAccountPool {
   private readonly defaultConfigDir: string;
   private timer: ReturnType<typeof setInterval> | null = null;
   private expiryTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly activityAt = new Map<string, number>();
+  private readonly lastReadAt = new Map<string, number>();
+  private readonly nudgeTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private polling = false;
 
   constructor(options: ClaudeAccountPoolOptions) {
@@ -294,11 +301,41 @@ export class ClaudeAccountPool {
     };
   }
 
+  /**
+   * Work just happened on `name` (terminal output, a finished ticket). Re-read
+   * its `/usage` once it has been quiet for a minute, at most every 3 minutes,
+   * so the header follows real use instead of waiting for the 15-minute poll.
+   */
+  nudge(name: string | undefined): void {
+    if (!this.enabled || !this.fetchUsage) return;
+    const account = this.find(name);
+    if (!account) return;
+    this.activityAt.set(account.name, this.now());
+    if (!this.nudgeTimers.has(account.name)) this.armNudge(account.name, NUDGE_QUIET_MS);
+  }
+
+  private armNudge(name: string, delay: number): void {
+    const timer = setTimeout(() => this.fireNudge(name), Math.max(0, delay));
+    timer.unref?.();
+    this.nudgeTimers.set(name, timer);
+  }
+
+  private fireNudge(name: string): void {
+    this.nudgeTimers.delete(name);
+    const now = this.now();
+    const quietFor = now - (this.activityAt.get(name) ?? 0);
+    if (quietFor < NUDGE_QUIET_MS) return this.armNudge(name, NUDGE_QUIET_MS - quietFor);
+    const sinceRead = now - (this.lastReadAt.get(name) ?? 0);
+    if (sinceRead < NUDGE_MIN_GAP_MS) return this.armNudge(name, NUDGE_MIN_GAP_MS - sinceRead);
+    void this.refresh(name);
+  }
+
   /** Read `/usage` for one account, or all non-default ones. */
   async refresh(only?: string): Promise<void> {
     if (!this.fetchUsage) return;
     const targets = this.accounts.filter((a) => (only ? a.name === only : a.configDir !== null));
     for (const account of targets) {
+      this.lastReadAt.set(account.name, this.now());
       const snap = await this.fetchUsage(this.envFor(account.name)).catch(() => null);
       this.noteUsage(account.name, snap);
     }
@@ -327,6 +364,8 @@ export class ClaudeAccountPool {
     this.timer = null;
     if (this.expiryTimer) clearTimeout(this.expiryTimer);
     this.expiryTimer = null;
+    for (const timer of this.nudgeTimers.values()) clearTimeout(timer);
+    this.nudgeTimers.clear();
   }
 
   status(): ClaudeAccountStatus[] {
