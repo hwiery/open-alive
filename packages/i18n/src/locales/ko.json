@@ -15,7 +15,6 @@
     "usageObservedAt": "기준: {{time}} (마지막 Codex 실행)",
     "usageFailed": "사용량 가져오지 못함",
     "usageLastFetched": "마지막 조회: {{time}}",
-    "usageAccountsBadge": "계정 {{count}}개",
     "usageAccountsTitle": "Claude 계정 (새 티켓 실행은 ▸ 계정으로)",
     "usageAccountPaused": "{{time}}까지 쉬는 중",
     "usageAccountNotRead": "아직 조회 전",

@@ -89,6 +89,8 @@ export interface TerminalManagerOptions {
    * the callback are caught and logged so they never break terminal handling.
    */
   onTerminalExit?: (tabId: string) => void;
+  /** Called on every chunk of output (keep it cheap): lets account rotation follow real use. */
+  onOutput?: (meta: ManagedTerminalMeta) => void;
 }
 
 export class TerminalManager {
@@ -96,11 +98,13 @@ export class TerminalManager {
   private send: TerminalManagerOptions['send'];
   private createTerminal: () => ClaudeTerminal;
   private onTerminalExit?: TerminalManagerOptions['onTerminalExit'];
+  private onOutput?: TerminalManagerOptions['onOutput'];
 
   constructor(options: TerminalManagerOptions) {
     this.send = options.send;
     this.createTerminal = options.createTerminal ?? (() => new ClaudeTerminal());
     this.onTerminalExit = options.onTerminalExit;
+    this.onOutput = options.onOutput;
   }
 
   /** Mark a terminal exited and notify the caller, swallowing callback errors. */
@@ -194,6 +198,13 @@ export class TerminalManager {
           this.appendScrollback(managed, data);
           this.fanout(managed, { type: 'terminal:output', tabId: opts.tabId, data });
           if (watchLimit) this.scanForLimit(managed, data);
+          if (this.onOutput) {
+            try {
+              this.onOutput(managed.meta);
+            } catch {
+              // an observer must never break the terminal
+            }
+          }
         },
         cols: 80,
         rows: 24,

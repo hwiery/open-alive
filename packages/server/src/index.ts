@@ -712,6 +712,10 @@ const ticketRunner = createTicketRunner({
   },
   // Record an evaluation whenever a ticket settles; broadcast it so clients update.
   onSettled: async (ticket) => {
+    // A finished run used its account; refresh that account's numbers soon.
+    if (claudeAccounts.enabled && ticket.location?.kind !== 'ssh' && (ticket.engine ?? 'claude') === 'claude') {
+      claudeAccounts.nudge(ticket.claudeAccount ?? claudeAccounts.accounts.find((a) => a.configDir === null)?.name);
+    }
     // Attach the orchestrator's sub-agent delegations (which models did what).
     if (ticket.orchestrated) {
       const delegations = readDelegations(ticket.id);
@@ -1022,6 +1026,10 @@ const terminalManager = new TerminalManager({
   // A pty exiting (or failing to spawn) makes its session resumable — tell every
   // connected client immediately instead of waiting for an unrelated event.
   onTerminalExit: () => broadcastResumable(),
+  // A Claude tab working on an account: re-read that account's usage once it settles.
+  onOutput: (meta) => {
+    if (meta.claudeAccount) claudeAccounts.nudge(meta.claudeAccount);
+  },
 });
 
 // Throttles lastActive persistence per tab so active typing doesn't hammer disk.

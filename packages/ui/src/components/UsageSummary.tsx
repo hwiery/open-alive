@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { UsageLimitsSnapshot } from '@open-alive/core';
 import { ModelLogo } from './ModelBadge.tsx';
 import {
-  formatRemaining, toUsageGroups, usagePillColor, type UsageAccounts, type UsageGroup, type UsagePill,
+  formatRemaining, toUsageGroups, usagePillColor, type UsageAccountRow, type UsageAccounts, type UsageGroup, type UsagePill,
 } from './usagePills.ts';
 import { relativeTime } from '../mobile/sessionStatus.ts';
 
@@ -112,39 +112,28 @@ export function UsageSummary({ usage, now, onOpen, layout = 'header' }: UsageSum
             }}
           >
             <ModelLogo model={LOGO_MODEL[g.provider]} size={13} />
-            {g.accounts && (
-              <span
-                data-testid="usage-claude-account"
-                style={{ color: allSpent ? 'var(--accent-red)' : 'var(--text-primary)', fontWeight: 600 }}
-              >
-                {allSpent ? t('header.usageAllAccountsSpent') : g.accounts.active}
+            {g.accounts && allSpent && (
+              <span data-testid="usage-claude-all-spent" style={{ color: 'var(--accent-red)', fontWeight: 600 }}>
+                {t('header.usageAllAccountsSpent')}
               </span>
             )}
-            {g.failed && (
+            {g.accounts && g.accounts.rows.map((row, i) => (
+              <span key={row.name} style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                {i > 0 && <span style={{ opacity: 0.5 }}>│</span>}
+                <AccountSegment row={row} now={now} showReset={showReset} compact={!showExtras} />
+              </span>
+            ))}
+            {!g.accounts && g.failed && (
               <span data-testid={`usage-${g.provider}-failed`} style={{ color: 'var(--accent-amber)', fontWeight: 600 }}>
                 {t('header.usageFailed')}
               </span>
             )}
-            {!g.failed && segments.map(({ pill, reset }, i) => (
+            {!g.accounts && !g.failed && segments.map(({ pill, reset }, i) => (
               <span key={pill.label} style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                 {i > 0 && <span>·</span>}
                 <WindowSegment pill={pill} now={now} showReset={reset} />
               </span>
             ))}
-            {g.accounts && (
-              <span
-                data-testid="usage-claude-accounts-badge"
-                style={{
-                  ...muted,
-                  padding: '0 5px',
-                  borderRadius: 6,
-                  border: '1px solid var(--border-color)',
-                  fontSize: 10,
-                }}
-              >
-                ⇄{showExtras ? ` ${t('header.usageAccountsBadge', { count: g.accounts.rows.length })}` : g.accounts.rows.length}
-              </span>
-            )}
             {age && !g.failed && (
               <span data-testid={`usage-${g.provider}-age`} style={muted}>
                 · {age}
@@ -215,6 +204,43 @@ function accountLines(accounts: UsageAccounts, t: (key: string, opts?: Record<st
       return `${row.active ? '▸' : '  '} ${row.name}  ${numbers}${paused}`;
     }),
   ];
+}
+
+/**
+ * One rotation account on the chip: `alt1 5H 12% 2h 30m · 7D 3% 4d 02h`. The
+ * account new runs go to is in full colour; the others are dimmed, and one that
+ * is paused (spent or at the threshold) is marked. `compact` keeps one number
+ * (the weekly window when known) so several accounts fit a narrow header.
+ */
+function AccountSegment({ row, now, showReset, compact }: { row: UsageAccountRow; now: number; showReset: boolean; compact: boolean }) {
+  const shown = compact ? row.windows.filter((w) => w.label === '7D').slice(0, 1) : row.windows;
+  const windows = shown.length > 0 ? shown : row.windows.slice(-1);
+  const paused = row.limitedUntil !== undefined;
+  return (
+    <span
+      data-testid={`usage-account-${row.name}`}
+      data-active={row.active ? 'true' : undefined}
+      style={{ display: 'inline-flex', gap: 6, alignItems: 'center', opacity: row.active ? 1 : 0.6 }}
+    >
+      <span
+        style={{
+          color: paused ? 'var(--accent-amber)' : row.active ? 'var(--text-primary)' : 'var(--text-secondary)',
+          fontWeight: row.active ? 700 : 500,
+          textDecoration: row.active ? 'underline' : 'none',
+          textUnderlineOffset: 3,
+        }}
+      >
+        {paused ? `⏸ ${row.name}` : row.name}
+      </span>
+      {windows.length === 0 && <span style={muted}>—</span>}
+      {windows.map((w, i) => (
+        <span key={w.label} style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+          {i > 0 && <span>·</span>}
+          <WindowSegment pill={w} now={now} showReset={showReset && !compact} />
+        </span>
+      ))}
+    </span>
+  );
 }
 
 /** `5H 23% 2h 30m` — label, percent, and (when room allows) time to reset. */

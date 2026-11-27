@@ -15,7 +15,6 @@
     "usageObservedAt": "As of {{time}} (last Codex run)",
     "usageFailed": "Couldn't fetch usage",
     "usageLastFetched": "Last fetched {{time}}",
-    "usageAccountsBadge": "{{count}} accounts",
     "usageAccountsTitle": "Claude accounts (new ticket runs go to ▸)",
     "usageAccountPaused": "paused until {{time}}",
     "usageAccountNotRead": "not read yet",

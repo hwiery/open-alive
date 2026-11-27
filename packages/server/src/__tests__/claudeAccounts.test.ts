@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile, readFile, symlink, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -273,6 +273,44 @@ describe('ClaudeAccountPool usage summary', () => {
     off();
     pool.noteUsage('alt1', snap(0.2));
     expect(calls).toBe(2);
+    pool.stop();
+  });
+});
+
+describe('ClaudeAccountPool nudge', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('re-reads an account once it has been quiet a minute, at most every 3 minutes', async () => {
+    vi.useFakeTimers();
+    const reads: string[] = [];
+    const pool = new ClaudeAccountPool({
+      accounts: parseClaudeAccounts('default,alt1', '/home/tester'),
+      now: () => Date.now(),
+      fetchUsage: async (env) => {
+        reads.push(env.CLAUDE_CONFIG_DIR ? 'alt1' : 'default');
+        return null;
+      },
+    });
+    pool.nudge('alt1');
+    await vi.advanceTimersByTimeAsync(30_000);
+    pool.nudge('alt1'); // still busy: the quiet minute restarts
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(reads).toEqual([]);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(reads).toEqual(['alt1']);
+
+    pool.nudge('alt1');
+    await vi.advanceTimersByTimeAsync(70_000);
+    expect(reads).toEqual(['alt1']); // within 3 minutes of the last read
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(reads).toEqual(['alt1', 'alt1']);
+
+    pool.nudge('default');
+    pool.nudge('nope');
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(reads).toEqual(['alt1', 'alt1', 'default']);
     pool.stop();
   });
 });
