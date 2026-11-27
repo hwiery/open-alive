@@ -69,25 +69,104 @@ export function linkSharedEntries(mainDir: string, dir: string): string[] {
 }
 
 /**
- * Copy user-scope MCP servers into the new account's `.claude.json` (that file
- * also holds the login, so it cannot be shared). Only when the new file has
- * none of its own. Returns how many were copied.
+ * Top-level `.claude.json` keys copied to a new account: onboarding done, which
+ * notices and dialogs were already seen or accepted, and install preferences.
+ * Without them an interactive `claude` on the account opens with the first-run
+ * wizard (theme picker, trust prompts) as if Claude Code were new. Identity
+ * (`oauthAccount`, `userID`), caches and usage counters are never copied.
  */
-export function copyMcpServers(mainJsonPath: string, accountJsonPath: string): number {
+const STATE_KEYS = [
+  'hasCompletedOnboarding',
+  'lastOnboardingVersion',
+  'lastReleaseNotesSeen',
+  'installMethod',
+  'autoUpdates',
+  'autoUpdatesProtectedForNative',
+  'optionAsMetaKeyInstalled',
+  'codeModeCaveatsAcceptedV1',
+  'codeModeAutoModeCaveatAcceptedV1',
+  'hasSeenAutoModeEntryWarning',
+  'hasSeenAutoDefaultNotice',
+  'hasSeenTasksHint',
+  'hasUsedBackslashReturn',
+  'hasOpenedAgentsView',
+  'remoteDialogSeen',
+] as const;
+
+/** Per-folder settings copied (trust and tool approvals); per-folder run metrics are not. */
+const PROJECT_KEYS = [
+  'hasTrustDialogAccepted',
+  'allowedTools',
+  'mcpServers',
+  'enabledMcpjsonServers',
+  'disabledMcpjsonServers',
+  'hasClaudeMdExternalIncludesApproved',
+  'hasClaudeMdExternalIncludesWarningShown',
+] as const;
+
+export interface CopiedState {
+  mcpServers: number;
+  keys: number;
+  projects: number;
+}
+
+/**
+ * Copy what makes Claude Code feel set up from the main `.claude.json` into an
+ * account's (that file also holds the login, so it cannot be shared): user MCP
+ * servers, onboarding/notice flags, and per-folder trust. Only fills what the
+ * account does not have yet; nothing of its own is overwritten.
+ */
+export function copyClaudeState(mainJsonPath: string, accountJsonPath: string): CopiedState {
+  const none: CopiedState = { mcpServers: 0, keys: 0, projects: 0 };
   let main: Record<string, unknown>;
   let account: Record<string, unknown>;
   try {
     main = JSON.parse(readFileSync(mainJsonPath, 'utf8')) as Record<string, unknown>;
     account = JSON.parse(readFileSync(accountJsonPath, 'utf8')) as Record<string, unknown>;
   } catch {
-    return 0;
+    return none;
   }
+  const out: CopiedState = { ...none };
+  const next: Record<string, unknown> = { ...account };
+
   const servers = main.mcpServers;
-  if (!servers || typeof servers !== 'object' || account.mcpServers) return 0;
-  const count = Object.keys(servers).length;
-  if (count === 0) return 0;
-  writeFileSync(accountJsonPath, JSON.stringify({ ...account, mcpServers: servers }, null, 2), { mode: 0o600 });
-  return count;
+  const own = account.mcpServers;
+  if (servers && typeof servers === 'object' && (!own || (typeof own === 'object' && Object.keys(own).length === 0))) {
+    out.mcpServers = Object.keys(servers).length;
+    if (out.mcpServers > 0) next.mcpServers = servers;
+  }
+  for (const key of STATE_KEYS) {
+    if (key in main && !(key in account)) {
+      next[key] = main[key];
+      out.keys++;
+    }
+  }
+  const mainProjects = main.projects;
+  if (mainProjects && typeof mainProjects === 'object') {
+    const projects: Record<string, Record<string, unknown>> = {
+      ...((account.projects as Record<string, Record<string, unknown>> | undefined) ?? {}),
+    };
+    for (const [path, entry] of Object.entries(mainProjects as Record<string, Record<string, unknown>>)) {
+      if (!entry || typeof entry !== 'object') continue;
+      const target = { ...(projects[path] ?? {}) };
+      let added = false;
+      for (const key of PROJECT_KEYS) {
+        if (key in entry && !(key in target)) {
+          target[key] = entry[key];
+          added = true;
+        }
+      }
+      if (added) {
+        projects[path] = target;
+        out.projects++;
+      }
+    }
+    if (out.projects > 0) next.projects = projects;
+  }
+  if (out.mcpServers + out.keys + out.projects > 0) {
+    writeFileSync(accountJsonPath, JSON.stringify(next, null, 2), { mode: 0o600 });
+  }
+  return out;
 }
 
 /** The `.claude.json` Claude Code uses for a config dir (in $HOME for the default dir). */

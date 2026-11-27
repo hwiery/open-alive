@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { WSClientMessage, WSServerMessage } from '@open-alive/core';
+import type { ClaudeAccountsUsage, WSClientMessage, WSServerMessage } from '@open-alive/core';
 import type { RawMessageSubscribe } from '../App.tsx';
 import { MobileSessionList, type MobileSession } from './MobileSessionList.tsx';
 import { MobileTerminal } from './MobileTerminal.tsx';
@@ -32,6 +32,8 @@ export interface MobileSessionsProps {
   projects: MobileProject[];
   /** The PC's live sessions, so the phone calls running what the PC sidebar does. */
   live?: LiveSessions;
+  /** Claude account rotation (from the usage snapshot); absent = off. */
+  claudeAccounts?: ClaudeAccountsUsage;
 }
 
 interface TreeSession {
@@ -92,7 +94,7 @@ export function flattenTree(tree: Tree): MobileSession[] {
  * shows and a phone has room for one of them — and only the terminal can be
  * answered.
  */
-export function MobileSessions({ subscribeRaw, send, terminalLevel, projects, live = null }: MobileSessionsProps) {
+export function MobileSessions({ subscribeRaw, send, terminalLevel, projects, live = null, claudeAccounts }: MobileSessionsProps) {
   const { t } = useTranslation();
   const localModel = useLocalModel();
   const [sessions, setSessions] = useState<MobileSession[]>([]);
@@ -206,7 +208,7 @@ export function MobileSessions({ subscribeRaw, send, terminalLevel, projects, li
    * Sized 60 columns rather than inherited: the pty wraps to the columns it is
    * told about, and a phone reading 80-column output is a wall of broken lines.
    */
-  const spawn = useCallback(({ cwd, mode, skipPermissions }: MobileSpawnRequest) => {
+  const spawn = useCallback(({ cwd, mode, skipPermissions, claudeAccount }: MobileSpawnRequest) => {
     const tabId = `phone-${uuid()}`;
     ownedTabRef.current = { tabId, rows: 24 };
     setPicking(false);
@@ -216,7 +218,7 @@ export function MobileSessions({ subscribeRaw, send, terminalLevel, projects, li
     const name = sessionsRef.current.find((s) => s.cwd === cwd)?.projectName || projectName(cwd);
     setOpen({ sessionId: tabId, providerSessionId: '', displayName: name, state: 'running', cwd, lastActivityAt: Date.now(), needsApproval: false });
     setAttachedTab(tabId);
-    send(phoneSpawnMessage({ tabId, cwd, mode, skipPermissions, sessionId: uuid() }));
+    send(phoneSpawnMessage({ tabId, cwd, mode, skipPermissions, sessionId: uuid(), ...(claudeAccount ? { claudeAccount } : {}) }));
     send({ type: 'terminal:resize', tabId, cols: PHONE_COLS, rows: 24 });
   }, [send, clearOutput]);
 
@@ -255,6 +257,7 @@ export function MobileSessions({ subscribeRaw, send, terminalLevel, projects, li
         recent={spawnFolders.recent}
         projects={projects}
         localModel={localModel?.model ?? null}
+        {...(claudeAccounts ? { accounts: { names: claudeAccounts.accounts.map((a) => a.name), active: claudeAccounts.active } } : {})}
         onCancel={() => setPicking(false)}
         onSpawn={spawn}
       />

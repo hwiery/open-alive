@@ -112,4 +112,21 @@ describe('MobileSpawnPicker', () => {
     render(<MobileSpawnPicker projects={[]} onCancel={() => {}} onSpawn={vi.fn()} />);
     expect(screen.getByText(/OPEN_ALIVE_TICKET_ROOTS/)).toBeInTheDocument();
   });
+
+  it('offers a Claude account choice only with two or more accounts', () => {
+    const onSpawn = vi.fn();
+    const { unmount } = render(
+      <MobileSpawnPicker projects={projects} accounts={{ names: ['default'], active: 'default' }} onCancel={() => {}} onSpawn={onSpawn} />,
+    );
+    expect(screen.queryByRole('radio', { name: 'alt1' })).toBeNull();
+    unmount();
+    render(
+      <MobileSpawnPicker projects={projects} accounts={{ names: ['default', 'alt1'], active: 'default' }} onCancel={() => {}} onSpawn={onSpawn} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'site' }));
+    expect(onSpawn).toHaveBeenLastCalledWith({ cwd: '/Users/me/work/site', mode: 'claude', skipPermissions: false });
+    fireEvent.click(screen.getByRole('radio', { name: 'alt1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'site' }));
+    expect(onSpawn).toHaveBeenLastCalledWith({ cwd: '/Users/me/work/site', mode: 'claude', skipPermissions: false, claudeAccount: 'alt1' });
+  });
 });

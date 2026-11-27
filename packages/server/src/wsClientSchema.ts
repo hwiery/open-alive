@@ -30,6 +30,7 @@ const schema: z.ZodType<WSClientMessage> = z.discriminatedUnion('type', [
     resumeSessionId: z.string().optional(),
     displayName: z.string().optional(),
     localModel: z.boolean().optional(),
+    claudeAccount: z.string().min(1).max(64).optional(),
   }),
   z.object({ type: z.literal('terminal:input'), tabId: z.string().min(1), data: z.string() }),
   z.object({
@@ -40,6 +41,11 @@ const schema: z.ZodType<WSClientMessage> = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('terminal:close'), tabId: z.string().min(1) }),
   z.object({ type: z.literal('terminal:attach'), tabId: z.string().min(1) }),
+  z.object({
+    type: z.literal('terminal:switch-account'),
+    tabId: z.string().min(1),
+    account: z.string().min(1).max(64),
+  }),
 ]) as z.ZodType<WSClientMessage>;
 
 /** Parse and validate a raw WS payload. Returns the message or null if invalid. */

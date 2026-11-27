@@ -514,7 +514,21 @@
     },
     "closeTab": "터미널 닫기",
     "positionLabel": "터미널 위치",
-    "dragHint": "제목 줄을 좌우로 끌어 위치를 옮길 수 있습니다"
+    "dragHint": "제목 줄을 좌우로 끌어 위치를 옮길 수 있습니다",
+    "account": {
+      "label": "Claude 계정",
+      "auto": "자동",
+      "autoHint": "자동은 지금 새 실행을 받는 계정({{account}})으로 엽니다.",
+      "badgeTitle": "Claude 계정 {{account}}로 실행 중",
+      "menuTitle": "다른 계정으로 이어 열기",
+      "menuCurrent": "현재",
+      "menuPaused": "쉬는 중",
+      "switching": "이 세션을 {{account}} 계정에서 이어 여는 중…",
+      "limitBanner": "이 탭의 계정({{account}})이 사용량 한도에 걸렸습니다.",
+      "limitBannerNoAccount": "이 탭이 Claude 사용량 한도에 걸렸습니다.",
+      "reopenOn": "{{account}}에서 이어 하기",
+      "dismiss": "닫기"
+    }
   },
   "chat": {
     "title": "Chat",

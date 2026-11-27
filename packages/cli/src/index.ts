@@ -30,7 +30,7 @@ import { runSetup, resolvePort, writePrivateFile } from './setup.js';
 import { isPortInUse } from './portCheck.js';
 import { windowsStartupScript } from './windowsStartup.js';
 import {
-  accountDir, addAccountToEnv, claudeJsonFor, copyMcpServers, linkSharedEntries, listAccounts,
+  accountDir, addAccountToEnv, claudeJsonFor, copyClaudeState, linkSharedEntries, listAccounts,
   mainClaudeDir, validateAccountName,
 } from './accounts.js';
 
@@ -38,6 +38,13 @@ const ALIVE_DIR = join(homedir(), '.open-alive');
 const PID_FILE = join(ALIVE_DIR, 'server.pid');
 const LOG_FILE = join(ALIVE_DIR, 'server.log');
 const ENV_FILE = join(ALIVE_DIR, '.env');
+
+/** Say what `copyClaudeState` carried over. */
+function reportCopiedState(copied: { mcpServers: number; keys: number; projects: number }): void {
+  if (copied.mcpServers > 0) console.log(`Copied ${copied.mcpServers} user MCP server(s).`);
+  if (copied.keys > 0) console.log(`Copied ${copied.keys} setup flag(s) (onboarding, seen notices).`);
+  if (copied.projects > 0) console.log(`Copied trust and tool approvals for ${copied.projects} folder(s).`);
+}
 
 /** Env-file text, or '' when there is no file yet. */
 function readEnvFile(): string {
@@ -605,15 +612,34 @@ switch (command) {
         console.error('\nSign-in did not finish. Run again: open-alive account add ' + name);
         process.exit(1);
       }
-      const copied = copyMcpServers(claudeJsonFor(process.env.CLAUDE_CONFIG_DIR?.trim() || null), claudeJsonFor(dir));
-      if (copied > 0) console.log(`Copied ${copied} user MCP server(s).`);
+      reportCopiedState(copyClaudeState(claudeJsonFor(process.env.CLAUDE_CONFIG_DIR?.trim() || null), claudeJsonFor(dir)));
       writeEnvFile(addAccountToEnv(readEnvFile(), name!));
       console.log(`\nAdded "${name}" to OA_CLAUDE_ACCOUNTS in ~/.open-alive/.env.`);
       console.log('Check both logins are different accounts: open-alive account list');
       console.log('Restart the server for it to take effect: open-alive restart');
       break;
     }
-    console.error(`Unknown account subcommand "${sub}". Use add <name>|list.`);
+    if (sub === 'sync') {
+      // Re-apply the shared links and copied settings to an account added
+      // earlier (or after Claude Code added new state). Never touches the login.
+      const name = process.argv[4];
+      const invalid = validateAccountName(name);
+      if (invalid) {
+        console.error(invalid.replace('add', 'sync'));
+        process.exit(1);
+      }
+      const dir = accountDir(name!);
+      if (!existsSync(join(dir, '.claude.json'))) {
+        console.error(`No signed-in account at ${dir}. Add it first: open-alive account add ${name}`);
+        process.exit(1);
+      }
+      const linked = linkSharedEntries(mainClaudeDir(), dir);
+      if (linked.length > 0) console.log(`Shared: ${linked.join(', ')}`);
+      reportCopiedState(copyClaudeState(claudeJsonFor(process.env.CLAUDE_CONFIG_DIR?.trim() || null), claudeJsonFor(dir)));
+      console.log(`"${name}" is up to date.`);
+      break;
+    }
+    console.error(`Unknown account subcommand "${sub}". Use add <name>|sync <name>|list.`);
     process.exit(1);
     break;
   }
@@ -685,7 +711,7 @@ Usage:
   open-alive status       Show server status
   open-alive token        new <label>|list|revoke <label> — device tokens for
                             remote access from the app
-  open-alive account      add <name>|list — extra Claude logins; a ticket whose
+  open-alive account      add <name>|sync <name>|list — extra Claude logins; a ticket whose
                             account runs out of usage resumes on the next one
   open-alive autostart    enable|disable|status — macOS launchd plist
                             (respawns the server on every exit)

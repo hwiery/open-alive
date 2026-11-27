@@ -37,6 +37,7 @@ const MESSAGE_LEVEL: Record<string, RemoteTerminalLevel> = {
   'terminal:input': 'input',
   'terminal:resize': 'input',
   'terminal:spawn': 'shell',
+  'terminal:switch-account': 'shell',
   'terminal:close': 'shell',
 };
 

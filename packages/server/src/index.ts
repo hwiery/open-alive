@@ -1056,6 +1056,66 @@ function combinedUsage(): import('@open-alive/core').UsageLimitsSnapshot | null 
   return { ...top, codex: codexUsage, claudeAccounts: accounts };
 }
 
+/**
+ * Account for a dashboard Claude tab. Rotation off, a non-Claude tab or an SSH
+ * tab → none (the process inherits the server's login). Otherwise: the account
+ * the client asked for; else the one this tab last ran on while it is still
+ * usable (a resume after a restart stays put); else the account new runs go to.
+ */
+function terminalAccount(tabId: string, mode: string, source: string, requested?: string): string | undefined {
+  if (!claudeAccounts.enabled || mode !== 'claude' || source === 'ssh') return undefined;
+  if (requested && claudeAccounts.has(requested)) return requested;
+  const previous = getManagedSession(tabId)?.claudeAccount;
+  if (previous && claudeAccounts.has(previous) && claudeAccounts.isUsable(previous)) return previous;
+  return claudeAccounts.pick() ?? previous ?? claudeAccounts.accounts[0]?.name;
+}
+
+/**
+ * Reopen a Claude tab's conversation on another account, in the same tab: the
+ * running `claude` is replaced by `claude --resume <id>` under that account's
+ * login. A session that never wrote a transcript (nothing said yet) starts
+ * fresh with the same id instead, since `--resume` would find nothing.
+ */
+async function switchTerminalAccount(ws: import('ws').WebSocket, tabId: string, account: string): Promise<void> {
+  if (!claudeAccounts.enabled || !claudeAccounts.has(account)) return;
+  const meta = terminalManager.meta(tabId);
+  const rec = getManagedSession(tabId);
+  const sessionId = meta?.claudeSessionId ?? rec?.claudeSessionId;
+  if (!sessionId || (meta && (meta.mode !== 'claude' || meta.source === 'ssh' || meta.claudeVariant !== 'claude'))) return;
+  const from = meta?.claudeAccount ?? rec?.claudeAccount;
+  if (from !== account) await claudeAccounts.transferSession(sessionId, from, account).catch(() => {});
+  const resumable = await claudeAccounts.hasSession(sessionId, account);
+  const cwd = meta?.cwd ?? rec?.cwd;
+  const displayName = meta?.displayName ?? rec?.displayName;
+  terminalManager.replace(ws, {
+    tabId,
+    cwd,
+    mode: 'claude',
+    source: 'local',
+    claudeVariant: 'claude',
+    // Same permission mode the tab was opened with; a tab with no live process keeps prompts on.
+    skipPermissions: meta?.skipPermissions === true,
+    ...(resumable ? { resumeSessionId: sessionId } : { claudeSessionId: sessionId }),
+    displayName,
+    claudeAccount: account,
+    extraEnv: claudeAccounts.envFor(account),
+  });
+  managedSessionIds.add(sessionId);
+  const now = Date.now();
+  saveManagedSession({
+    tabId,
+    claudeSessionId: sessionId,
+    cwd,
+    displayName,
+    mode: 'claude',
+    claudeVariant: 'claude',
+    claudeAccount: account,
+    createdAt: rec?.createdAt ?? now,
+    lastActive: now,
+  }).catch((err) => console.error(`[session] failed to persist ${tabId}:`, err));
+  console.log(`[accounts] tab ${tabId} reopened on ${account}${resumable ? ' (resumed)' : ' (new session)'}`);
+}
+
 const broadcaster = new WSBroadcaster({
   getSnapshot,
   remoteTerminalLevel: remoteAccess.terminalLevel,
@@ -1083,6 +1143,7 @@ const broadcaster = new WSBroadcaster({
       // This is what makes the Claude CLI /resume picker, sidebar, and tab label all share one name.
       const resolvedDisplayName =
         msg.displayName ?? (msg.cwd ? getProjectName(msg.cwd) : undefined);
+      const account = terminalAccount(msg.tabId, msg.mode ?? 'claude', msg.source ?? 'local', msg.claudeAccount);
       terminalManager.create(ws, {
         tabId: msg.tabId,
         cwd: msg.cwd,
@@ -1095,7 +1156,13 @@ const broadcaster = new WSBroadcaster({
         resumeSessionId: msg.resumeSessionId,
         displayName: resolvedDisplayName,
         localModel: msg.localModel,
+        ...(account ? { claudeAccount: account, extraEnv: claudeAccounts.envFor(account) } : {}),
       });
+      // A resumed tab moving to another account needs its transcript there.
+      const prevAccount = getManagedSession(msg.tabId)?.claudeAccount;
+      if (account && msg.resumeSessionId && prevAccount && prevAccount !== account) {
+        void claudeAccounts.transferSession(msg.resumeSessionId, prevAccount, account).catch(() => {});
+      }
       // Persist Claude (non-SSH) sessions so they can be resumed after a restart.
       const effectiveClaudeId = msg.resumeSessionId ?? msg.claudeSessionId;
       if ((msg.mode ?? 'claude') === 'claude' && msg.source !== 'ssh' && effectiveClaudeId) {
@@ -1107,6 +1174,7 @@ const broadcaster = new WSBroadcaster({
           displayName: resolvedDisplayName,
           mode: 'claude',
           claudeVariant: msg.claudeVariant ?? 'claude',
+          ...(account ? { claudeAccount: account } : {}),
           createdAt: now,
           lastActive: now,
         }).catch((err) => console.error(`[session] failed to persist ${msg.tabId}:`, err));
@@ -1131,6 +1199,8 @@ const broadcaster = new WSBroadcaster({
           broadcaster.send(ws, { type: 'terminal:missing', tabId: msg.tabId });
         }
       }
+    } else if (msg.type === 'terminal:switch-account') {
+      void switchTerminalAccount(ws, msg.tabId, msg.account);
     } else if (msg.type === 'terminal:input') {
       terminalManager.input(msg.tabId, msg.data);
       const now = Date.now();

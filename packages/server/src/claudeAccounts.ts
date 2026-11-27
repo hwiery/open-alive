@@ -381,6 +381,29 @@ export class ClaudeAccountPool {
     }
   }
 
+  /** True when the account has the account name. */
+  has(name: string): boolean {
+    return this.accounts.some((a) => a.name === name);
+  }
+
+  /** Whether `sessionId` has a transcript `--resume` can open under `account`. */
+  async hasSession(sessionId: string, account: string | undefined): Promise<boolean> {
+    if (!/^[A-Za-z0-9-]{8,80}$/.test(sessionId)) return false;
+    const dir = this.dirOf(this.find(account));
+    if (!dir) return false;
+    const projects = join(dir, 'projects');
+    let slugs: string[];
+    try {
+      slugs = await readdir(projects);
+    } catch {
+      return false;
+    }
+    for (const slug of slugs) {
+      if (await stat(join(projects, slug, `${sessionId}.jsonl`)).then(() => true).catch(() => false)) return true;
+    }
+    return false;
+  }
+
   private dirOf(account: ClaudeAccount | undefined): string | null {
     if (!account) return null;
     return account.configDir ?? this.defaultConfigDir;

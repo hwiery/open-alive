@@ -21,6 +21,8 @@ export interface MobileSpawnRequest {
   mode: PhoneTerminalMode;
   /** Claude/Codex: skip permission prompts, as the PC dialog's presets. Always false for a shell. */
   skipPermissions: boolean;
+  /** Claude with account rotation: the chosen account; absent = automatic. */
+  claudeAccount?: string;
 }
 
 export interface MobileSpawnPickerProps {
@@ -32,6 +34,8 @@ export interface MobileSpawnPickerProps {
   projects: MobileProject[];
   /** The server's local model name, if it has one; enables the local Codex choice. */
   localModel?: string | null;
+  /** Claude account rotation: account names and the one new runs go to. Fewer than two = hidden. */
+  accounts?: { names: string[]; active: string | null };
   onCancel: () => void;
   onSpawn: (request: MobileSpawnRequest) => void;
 }
@@ -47,7 +51,7 @@ const SKIP_KEY = 'open-alive:mobile-skip-permissions';
  * before, the allowlist, or a typed path. Tapping a folder starts it, as on
  * the PC. Mode and the switch are remembered on this device.
  */
-export function MobileSpawnPicker({ running = [], recent = [], projects, localModel, onCancel, onSpawn }: MobileSpawnPickerProps) {
+export function MobileSpawnPicker({ running = [], recent = [], projects, localModel, accounts, onCancel, onSpawn }: MobileSpawnPickerProps) {
   const { t } = useTranslation();
   const storage = browserStorage();
   const modes = MODES.filter((m) => m !== 'codex-local' || !!localModel);
@@ -62,6 +66,9 @@ export function MobileSpawnPicker({ running = [], recent = [], projects, localMo
   // token is easier to lose than a seat at the PC. The opt-in is remembered.
   const [skip, setSkip] = useState(() => readTerminalPref(storage, SKIP_KEY) === '1');
   const [manual, setManual] = useState('');
+  /** '' = automatic (the account new runs go to). */
+  const [account, setAccount] = useState('');
+  const accountNames = accounts && accounts.names.length >= 2 ? accounts.names : [];
 
   const chooseMode = (next: PhoneTerminalMode) => {
     setMode(next);
@@ -71,7 +78,13 @@ export function MobileSpawnPicker({ running = [], recent = [], projects, localMo
     setSkip(!skip);
     saveTerminalPref(storage, SKIP_KEY, skip ? '0' : '1');
   };
-  const start = (cwd: string) => onSpawn({ cwd, mode, skipPermissions: agent && skip });
+  const start = (cwd: string) =>
+    onSpawn({
+      cwd,
+      mode,
+      skipPermissions: agent && skip,
+      ...(mode === 'claude' && accountNames.includes(account) ? { claudeAccount: account } : {}),
+    });
 
   // Each folder once, in the first section that lists it.
   const seen = new Set<string>();
@@ -123,6 +136,33 @@ export function MobileSpawnPicker({ running = [], recent = [], projects, localMo
               )}
             </span>
           </label>
+        )}
+
+        {mode === 'claude' && accountNames.length >= 2 && (
+          <>
+            <span style={label}>{t('terminal.account.label')}</span>
+            <div role="radiogroup" aria-label={t('terminal.account.label')} style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+              {['', ...accountNames].map((name) => {
+                const selected = (accountNames.includes(account) ? account : '') === name;
+                return (
+                  <button
+                    key={name || 'auto'}
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setAccount(name)}
+                    style={{
+                      minHeight: 40, padding: '0 14px', borderRadius: 10, cursor: 'pointer', fontSize: 14, fontWeight: 600,
+                      border: `1px solid ${selected ? COLORS.accent : COLORS.border}`,
+                      background: selected ? COLORS.accent : 'transparent',
+                      color: selected ? 'var(--on-accent)' : COLORS.text,
+                    }}
+                  >
+                    {name || `${t('terminal.account.auto')} · ${accounts?.active ?? '—'}`}
+                  </button>
+                );
+              })}
+            </div>
+          </>
         )}
 
         {sections.length === 0 && (

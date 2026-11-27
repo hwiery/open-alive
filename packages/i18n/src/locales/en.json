@@ -514,7 +514,21 @@
     },
     "closeTab": "Close terminal",
     "positionLabel": "Terminal position",
-    "dragHint": "Drag the title bar left or right to move it"
+    "dragHint": "Drag the title bar left or right to move it",
+    "account": {
+      "label": "Claude account",
+      "auto": "Auto",
+      "autoHint": "Auto uses the account new runs go to now ({{account}}).",
+      "badgeTitle": "Runs on Claude account {{account}}",
+      "menuTitle": "Reopen on another account",
+      "menuCurrent": "current",
+      "menuPaused": "paused",
+      "switching": "Reopening this session on the {{account}} account…",
+      "limitBanner": "This tab’s account ({{account}}) hit its usage limit.",
+      "limitBannerNoAccount": "This tab hit its Claude usage limit.",
+      "reopenOn": "Continue on {{account}}",
+      "dismiss": "Dismiss"
+    }
   },
   "chat": {
     "title": "Chat",

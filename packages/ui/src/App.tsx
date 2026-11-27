@@ -451,6 +451,7 @@ export default function App() {
       resumeSessionId?: string;
       displayName?: string;
       localModel?: boolean;
+      claudeAccount?: string;
     }) => {
       send({
         type: 'terminal:spawn',
@@ -464,10 +465,15 @@ export default function App() {
         resumeSessionId: req.resumeSessionId,
         displayName: req.displayName,
         ...(req.localModel ? { localModel: true } : {}),
+        ...(req.claudeAccount ? { claudeAccount: req.claudeAccount } : {}),
       });
     },
     [send],
   );
+
+  const handleTerminalSwitchAccount = useCallback((tabId: string, account: string) => {
+    send({ type: 'terminal:switch-account', tabId, account });
+  }, [send]);
 
   const handleTerminalInput = useCallback((tabId: string, data: string) => {
     send({ type: 'terminal:input', tabId, data });
@@ -805,6 +811,8 @@ export default function App() {
           onSelectSpreadTile={handleSelectSpreadTile}
           onModeChange={handleTerminalModeChange}
           onDockSizeChange={setTerminalDockSize}
+          claudeAccounts={usageLimits?.claudeAccounts}
+          onSwitchAccount={handleTerminalSwitchAccount}
         />
       </div>
     </div>

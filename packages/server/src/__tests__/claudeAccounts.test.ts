@@ -216,6 +216,17 @@ describe('ClaudeAccountPool', () => {
       expect(await readFile(join(dir, 'alt1/projects/-r', `${sid}.jsonl`), 'utf8')).toBe('x\n');
     });
 
+    it('knows whether an account can resume a session', async () => {
+      await mkdir(join(dir, 'main/projects/-r'), { recursive: true });
+      await writeFile(join(dir, 'main/projects/-r', `${sid}.jsonl`), 'x\n');
+      const p = pool();
+      expect(await p.hasSession(sid, 'default')).toBe(true);
+      expect(await p.hasSession(sid, 'alt1')).toBe(false);
+      expect(await p.hasSession('../x', 'default')).toBe(false);
+      expect(p.has('alt1')).toBe(true);
+      expect(p.has('nope')).toBe(false);
+    });
+
     it('refuses a session id that could escape the folder', async () => {
       await mkdir(join(dir, 'main/projects'), { recursive: true });
       await expect(pool().transferSession('../../etc', 'default', 'alt1')).resolves.toBeUndefined();

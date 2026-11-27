@@ -77,6 +77,8 @@ export interface SpawnOptions {
   displayName?: string;
   /** Codex only: run on the local model from `OA_LOCAL_MODEL` (`codex --oss`). */
   localModel?: boolean;
+  /** Claude only: extra env for the `claude` process (e.g. CLAUDE_CONFIG_DIR for account rotation). */
+  extraEnv?: Record<string, string>;
 }
 
 /**
@@ -221,6 +223,7 @@ export class ClaudeTerminal {
       resumeSessionId,
       displayName,
       localModel,
+      extraEnv,
     } = opts;
 
     this.onData = handler;
@@ -234,6 +237,7 @@ export class ClaudeTerminal {
     const cwdResolved = cwd || homedir();
 
     if (mode === 'claude') {
+      if (extraEnv) Object.assign(env, extraEnv);
       const win = process.platform === 'win32';
       const claudeCmd = buildClaudeCommand({
         ...(win ? { shell: 'powershell' as const, claudePath: resolveCli('claude', env) ?? 'claude' } : {}),

@@ -26,7 +26,22 @@ export interface ManagedTerminalMeta {
   mode: TerminalMode;
   source: TerminalSource;
   claudeVariant: 'claude' | 'agents';
+  /** Claude account rotation: the account this tab's `claude` runs on. */
+  claudeAccount?: string;
+  /** Whether the tab was opened with permission prompts skipped (kept on an account switch). */
+  skipPermissions?: boolean;
 }
+
+/**
+ * Claude Code's own usage-limit notice (`You've hit your limit · resets 3pm`).
+ * Requires the reset clause so a conversation that merely mentions limits does
+ * not trigger it; even a match only offers a switch, it never switches.
+ */
+const ACCOUNT_LIMIT_RE = /(?:you['’]ve hit your (?:session |weekly |opus |sonnet )?limit|usage limit reached)[^\n]{0,60}?resets?\b[^\n]{0,40}/i;
+/** One notice per tab per this long, however often the TUI repaints it. */
+const ACCOUNT_LIMIT_QUIET_MS = 10 * 60_000;
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b\[[0-9;?]*[ -\/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
 
 export interface CreateTerminalOptions {
   tabId: string;
@@ -40,6 +55,10 @@ export interface CreateTerminalOptions {
   resumeSessionId?: string;
   displayName?: string;
   localModel?: boolean;
+  /** Claude only: extra env for the `claude` process (CLAUDE_CONFIG_DIR of an account). */
+  extraEnv?: Record<string, string>;
+  /** Claude account rotation: the account name `extraEnv` selects. */
+  claudeAccount?: string;
 }
 
 interface ManagedTerminal {
@@ -53,6 +72,10 @@ interface ManagedTerminal {
   /** Last known pty size — used to force a redraw on reattach. */
   cols: number;
   rows: number;
+  /** Tail of recent output (ANSI stripped) scanned for the usage-limit notice. */
+  limitTail: string;
+  /** Wall-clock ms of the last usage-limit notice sent for this tab. */
+  limitNoticeAt?: number;
 }
 
 export interface TerminalManagerOptions {
@@ -115,15 +138,38 @@ export class TerminalManager {
       this.subscribe(existing, ws);
       return;
     }
+    this.spawnManaged(new Set([ws]), opts);
+  }
+
+  /**
+   * Replace a tab's process in place (same tabId), keeping every viewer
+   * subscribed: used to reopen a Claude session on another account. The old
+   * pty is destroyed without an exit notice, so the tab never flashes "exited".
+   */
+  replace(ws: WebSocket, opts: CreateTerminalOptions): void {
+    const old = this.terminals.get(opts.tabId);
+    const subscribers = new Set<WebSocket>(old?.subscribers ?? []);
+    subscribers.add(ws);
+    if (old) {
+      old.exited = true; // silences its exit callback
+      old.term.destroy();
+      this.terminals.delete(opts.tabId);
+    }
+    this.spawnManaged(subscribers, opts);
+  }
+
+  private spawnManaged(subscribers: Set<WebSocket>, opts: CreateTerminalOptions): void {
+    const ws = [...subscribers][0]!;
 
     const isSsh = opts.source === 'ssh';
     const managed: ManagedTerminal = {
       term: this.createTerminal(),
       scrollback: '',
-      subscribers: new Set([ws]),
+      subscribers,
       exited: false,
       cols: 80,
       rows: 24,
+      limitTail: '',
       meta: {
         tabId: opts.tabId,
         claudeSessionId: opts.resumeSessionId ?? opts.claudeSessionId,
@@ -132,19 +178,27 @@ export class TerminalManager {
         mode: opts.mode ?? 'claude',
         source: opts.source ?? 'local',
         claudeVariant: opts.claudeVariant ?? 'claude',
+        ...(opts.claudeAccount ? { claudeAccount: opts.claudeAccount } : {}),
+        ...(opts.skipPermissions ? { skipPermissions: true } : {}),
       },
     };
     this.terminals.set(opts.tabId, managed);
+    const watchLimit = (opts.mode ?? 'claude') === 'claude' && !isSsh;
+    if (managed.meta.claudeAccount) {
+      this.fanout(managed, { type: 'terminal:account', tabId: opts.tabId, account: managed.meta.claudeAccount });
+    }
 
     try {
       managed.term.spawn({
         handler: (data) => {
           this.appendScrollback(managed, data);
           this.fanout(managed, { type: 'terminal:output', tabId: opts.tabId, data });
+          if (watchLimit) this.scanForLimit(managed, data);
         },
         cols: 80,
         rows: 24,
         onExit: (exitCode) => {
+          if (this.terminals.get(opts.tabId) !== managed) return; // replaced
           this.markExited(managed);
           this.fanout(managed, { type: 'terminal:exited', tabId: opts.tabId, exitCode });
         },
@@ -168,6 +222,7 @@ export class TerminalManager {
         resumeSessionId: opts.resumeSessionId,
         displayName: opts.displayName,
         localModel: opts.localModel,
+        ...(opts.extraEnv ? { extraEnv: opts.extraEnv } : {}),
       });
     } catch (err) {
       // pty.spawn can throw synchronously (e.g. cwd no longer exists for a
@@ -251,6 +306,9 @@ export class TerminalManager {
     // Size first, so the replay below is laid out on the grid it was drawn for.
     this.send(ws, { type: 'terminal:size', tabId: managed.meta.tabId, cols: managed.cols, rows: managed.rows });
     this.send(ws, { type: 'terminal:restore', tabId: managed.meta.tabId, data: managed.scrollback });
+    if (managed.meta.claudeAccount) {
+      this.send(ws, { type: 'terminal:account', tabId: managed.meta.tabId, account: managed.meta.claudeAccount });
+    }
     if (managed.exited) {
       this.send(ws, { type: 'terminal:exited', tabId: managed.meta.tabId, exitCode: 0 });
       return;
@@ -278,6 +336,26 @@ export class TerminalManager {
       if (this.terminals.get(managed.meta.tabId) !== managed) return;
       managed.term.resize(managed.cols, managed.rows);
     }, 60);
+  }
+
+  /**
+   * Watch a Claude tab for Claude Code's usage-limit notice and tell its viewers
+   * once (per quiet period), so the UI can offer another account.
+   */
+  private scanForLimit(managed: ManagedTerminal, data: string): void {
+    managed.limitTail = (managed.limitTail + data.replace(ANSI_RE, '')).slice(-2_000);
+    const now = Date.now();
+    if (managed.limitNoticeAt !== undefined && now - managed.limitNoticeAt < ACCOUNT_LIMIT_QUIET_MS) return;
+    const match = ACCOUNT_LIMIT_RE.exec(managed.limitTail);
+    if (!match) return;
+    managed.limitNoticeAt = now;
+    managed.limitTail = '';
+    this.fanout(managed, {
+      type: 'terminal:account-limit',
+      tabId: managed.meta.tabId,
+      ...(managed.meta.claudeAccount ? { account: managed.meta.claudeAccount } : {}),
+      line: match[0].replace(/\s+/g, ' ').trim().slice(0, 160),
+    });
   }
 
   private appendScrollback(managed: ManagedTerminal, data: string): void {

@@ -159,14 +159,16 @@ Process environment values win over `~/.open-alive/.env`: a `LITELLM_BASE_URL` e
 ```bash
 open-alive account add alt1     # sign in to another Claude account (browser)
 open-alive account list         # check each login
+open-alive account sync alt1    # re-apply shared settings to an account added earlier
 open-alive restart
 ```
 
-Each account is a Claude Code config directory (`~/.claude-<name>`) with its own login. `account add` links `projects/`, `settings.json` (with the open-alive hooks), `CLAUDE.md`, skills, agents, commands and plugins from `~/.claude`, so a ticket behaves the same on every account and `--resume` finds the session, and copies your user MCP servers.
-When a running ticket stops with Claude's "You've hit your limit" message, its account is benched until the reset and the ticket resumes on the next account (recorded on the ticket). A transient 429 does not switch. Accounts at `OA_CLAUDE_ACCOUNT_SWITCH_AT` (99%) take no new runs. Applies to local Claude tickets only: dashboard terminals, SSH and Codex tickets are not switched.
+Each account is a Claude Code config directory (`~/.claude-<name>`) with its own login. `account add` links `projects/`, `settings.json` (with the open-alive hooks), `CLAUDE.md`, skills, agents, commands and plugins from `~/.claude`, so a ticket behaves the same on every account and `--resume` finds the session, and copies your user MCP servers, onboarding/notice flags and per-folder trust (so an interactive tab on the account does not open with the first-run wizard).
+When a running ticket stops with Claude's "You've hit your limit" message, its account is benched until the reset and the ticket resumes on the next account (recorded on the ticket). A transient 429 does not switch. Accounts at `OA_CLAUDE_ACCOUNT_SWITCH_AT` (99%) take no new runs. Applies to local Claude tickets; SSH and Codex tickets are not switched.
+Dashboard terminal tabs: the new-terminal dialog (PC and phone) has a **Claude account** choice (Auto = the account new runs go to), each Claude tab shows its account, right-click a tab → **Reopen on another account** continues the same conversation there, and when a tab prints Claude's usage-limit message a bar offers the other accounts. Interactive tabs are never moved automatically; a tab keeps its account across server restarts.
 The first turn on the new account re-reads the whole context (prompt caches are per account). Spreading work across several subscriptions may conflict with Anthropic's terms for your plan; check them and use accounts you own.
 
-계정마다 로그인이 따로인 설정 폴더(`~/.claude-<이름>`)를 둡니다. 실행 중인 티켓이 사용량 한도로 멈추면 그 계정은 리셋까지 쉬게 하고, 같은 세션을 다음 계정에서 `--resume` 으로 이어 갑니다. 일시적인 429 에서는 바꾸지 않고, 5시간·7일 창이 99% 이상인 계정은 새 실행을 받지 않습니다. 로컬 Claude 티켓에만 적용됩니다. 여러 구독에 나눠 쓰는 것은 요금제 약관과 맞지 않을 수 있으니 확인하고 본인 계정으로 쓰세요.
+계정마다 로그인이 따로인 설정 폴더(`~/.claude-<이름>`)를 둡니다. 실행 중인 티켓이 사용량 한도로 멈추면 그 계정은 리셋까지 쉬게 하고, 같은 세션을 다음 계정에서 `--resume` 으로 이어 갑니다. 일시적인 429 에서는 바꾸지 않고, 5시간·7일 창이 99% 이상인 계정은 새 실행을 받지 않습니다. 로컬 Claude 티켓에 적용되고, 대시보드 터미널은 새 터미널 창에서 계정을 고르거나 탭 우클릭 → '다른 계정으로 이어 열기'로 같은 대화를 옮길 수 있습니다(한도 메시지가 뜨면 안내 바가 나오며, 자동으로 옮기지는 않습니다). 여러 구독에 나눠 쓰는 것은 요금제 약관과 맞지 않을 수 있으니 확인하고 본인 계정으로 쓰세요.
 
 ### Model catalogue (`models.json`) / 모델 카탈로그
 

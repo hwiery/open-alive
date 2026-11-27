@@ -69,6 +69,12 @@ export type WSServerMessage =
   // predates persistence). The client resumes from its OWN persisted
   // claudeSessionId so a restored tab is never left blank.
   | { type: 'terminal:missing'; tabId: string }
+  // Claude account rotation: which account (OA_CLAUDE_ACCOUNTS name) this tab's
+  // `claude` runs on. Sent on spawn, attach and account switch.
+  | { type: 'terminal:account'; tabId: string; account: string }
+  // The tab's Claude printed its usage-limit message. Advisory: the UI offers to
+  // reopen the session on another account; nothing is switched automatically.
+  | { type: 'terminal:account-limit'; tabId: string; account?: string; line: string }
   // Broadcast when the set of resumable (dormant) sessions changes.
   | { type: 'sessions:resumable'; sessions: ResumableSession[] }
   | { type: 'project:names'; names: Record<string, string> }
@@ -111,10 +117,19 @@ export type WSClientMessage =
       displayName?: string;
       /** Codex only: run on the server's local model (`OA_LOCAL_MODEL`, `codex --oss`). */
       localModel?: boolean;
+      /**
+       * Claude only, with account rotation: run on this account. Absent = the
+       * tab's previous account when resuming (if still usable), else the account
+       * new runs go to.
+       */
+      claudeAccount?: string;
     }
   | { type: 'terminal:input'; tabId: string; data: string }
   | { type: 'terminal:resize'; tabId: string; cols: number; rows: number }
   | { type: 'terminal:close'; tabId: string }
   // Reattach to a server-owned terminal after a browser refresh. The server
   // replies with `terminal:restore` (pty alive) or `terminal:dormant` (pty gone).
-  | { type: 'terminal:attach'; tabId: string };
+  | { type: 'terminal:attach'; tabId: string }
+  // Reopen this Claude tab's session on another account (`claude --resume` under
+  // that account's login), replacing the running process in the same tab.
+  | { type: 'terminal:switch-account'; tabId: string; account: string };
