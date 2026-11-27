@@ -840,18 +840,31 @@ export function ChatOverlay({ open, onToggle, onSpawn, onInput, onResize, onClos
     }
   }, [connected, tabs]);
 
+  // A folder listing can answer after the overlay is gone (a closed page, a
+  // finished test); updating state then is at best a no-op and at worst throws.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const fetchBrowse = useCallback(
     (dir: string) => {
       setBrowseLoading(true);
       fetch(`${API_BASE}/api/fs/browse?dir=${encodeURIComponent(dir)}`)
         .then((r) => r.json())
         .then((data: { path: string; dirs: { name: string; path: string }[] }) => {
+          if (!mountedRef.current) return;
           setBrowseCurrentPath(data.path);
           setBrowseDirs(data.dirs);
           setBrowsePath(data.path);
         })
         .catch(() => {})
-        .finally(() => setBrowseLoading(false));
+        .finally(() => {
+          if (mountedRef.current) setBrowseLoading(false);
+        });
     },
     [],
   );
