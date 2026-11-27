@@ -55,7 +55,9 @@ beforeEach(async () => {
   clock = 0;
 });
 afterEach(async () => {
-  await rm(dir, { recursive: true, force: true });
+  // A ticket store may still be flushing its last write when a test ends; retry
+  // instead of failing the run on ENOTEMPTY (seen on slow CI runners).
+  await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
 
 describe('isCwdAllowed', () => {

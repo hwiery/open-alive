@@ -21,7 +21,7 @@ describe('parseClaudeAccounts', () => {
   it('maps default, bare names and explicit dirs', () => {
     expect(parseClaudeAccounts('default, alt1 ,work=/abs/dir', HOME)).toEqual([
       { name: 'default', configDir: null },
-      { name: 'alt1', configDir: `${HOME}/.claude-alt1` },
+      { name: 'alt1', configDir: join(HOME, '.claude-alt1') },
       { name: 'work', configDir: '/abs/dir' },
     ]);
   });
@@ -77,7 +77,7 @@ describe('ClaudeAccountPool', () => {
   it('sets CLAUDE_CONFIG_DIR only for non-default accounts', () => {
     const pool = new ClaudeAccountPool({ accounts, now });
     expect(pool.envFor('default')).toEqual({});
-    expect(pool.envFor('alt1')).toEqual({ CLAUDE_CONFIG_DIR: `${HOME}/.claude-alt1` });
+    expect(pool.envFor('alt1')).toEqual({ CLAUDE_CONFIG_DIR: join(HOME, '.claude-alt1') });
   });
 
   it('benches a refused account until the fallback hour passes', () => {
@@ -143,7 +143,7 @@ describe('ClaudeAccountPool', () => {
       },
     });
     await pool.refresh();
-    expect(seen).toEqual([{ CLAUDE_CONFIG_DIR: `${HOME}/.claude-alt1` }, { CLAUDE_CONFIG_DIR: `${HOME}/.claude-alt2` }]);
+    expect(seen).toEqual([{ CLAUDE_CONFIG_DIR: join(HOME, '.claude-alt1') }, { CLAUDE_CONFIG_DIR: join(HOME, '.claude-alt2') }]);
     expect(pool.isUsable('alt1')).toBe(false);
     expect(pool.isUsable('alt2')).toBe(true);
   });
