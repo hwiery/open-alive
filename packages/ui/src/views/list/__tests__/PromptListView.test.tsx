@@ -69,8 +69,9 @@ it('preserves list selection and full prompt detail rendering', async () => {
   render(<PromptListView active />);
 
   fireEvent.click(await screen.findByRole('button', { name: /second prompt/i }));
-  // The detail loads through a lazy chunk + fetch; slow CI runners need more than the 1s default.
-  expect(await screen.findByText('Selected prompt detail', {}, { timeout: 5000 })).toBeInTheDocument();
+  // The detail loads through a lazy chunk + fetch. Alone it takes ~0.2s, but on a
+  // loaded CI runner (the whole UI suite in parallel) 5s was not always enough.
+  expect(await screen.findByText('Selected prompt detail', {}, { timeout: 15000 })).toBeInTheDocument();
   expect(screen.getByText('R-2')).toBeInTheDocument();
   expect(screen.getByText('Clarify the desired output')).toBeInTheDocument();
   expect(screen.getByText('Coaching context')).toBeInTheDocument();
